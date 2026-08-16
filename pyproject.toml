@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "bidib2wled"
+version = "0.1.0"
+description = "BiDiB-Knoten zur Steuerung von WLED-Beleuchtung auf der Modellbahn"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "BiDiB2WLED" }]
+dependencies = [
+    "aiohttp>=3.9",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "pydantic>=2.5",
+    "pyyaml>=6.0",
+    "zeroconf>=0.132",
+    "platformdirs>=4.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",
+]
+
+[project.scripts]
+bidib2wled = "bidib2wled.__main__:main"
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/bidib2wled/static" = "bidib2wled/static"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]

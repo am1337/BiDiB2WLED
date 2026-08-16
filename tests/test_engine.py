@@ -1,0 +1,81 @@
+import pytest
+
+from bidib2wled.config import AppConfig
+from bidib2wled.core import Engine
+from bidib2wled.wled import WledPool
+
+
+@pytest.fixture
+def engine():
+    pool = WledPool(simulate=True)
+    pool.bind("dorf", ip="127.0.0.1", leds=20, mac="aa:bb:cc:dd:ee:ff")
+    cfg = AppConfig.model_validate(
+        {
+            "controller": [{"name": "dorf", "ip": "127.0.0.1", "leds": 20}],
+            "lampen": {"laterne-1": {"controller": "dorf", "leds": [0], "farbe": "FFB060"}},
+            "haeuser": {
+                "haus-a": {
+                    "controller": "dorf",
+                    "einschalten": "sofort",
+                    "nacht-wahrscheinlichkeit": 1,
+                    "fenster": {"wz": {"leds": [2, 3], "farbe": "FFFFFF"}},
+                }
+            },
+            "gruppen": {"g1": {"mitglieder": ["laterne-1", "haus-a"]}},
+            "sequenzen": {
+                "seq": {"gruppen": ["g1"], "reihenfolge": "definiert", "verzoegerung": [0, 0]}
+            },
+            "signale": {
+                "sig": {
+                    "controller": "dorf",
+                    "begriffe": {
+                        0: {"name": "Halt", "leds": {5: "FF0000"}},
+                        1: {"name": "Fahrt", "leds": {6: "00FF00"}},
+                    },
+                }
+            },
+        }
+    )
+    eng = Engine(pool)
+    eng.load(cfg)
+    return eng
+
+
+@pytest.mark.asyncio
+async def test_lamp_on_off(engine):
+    await engine.switch("laterne-1", 1)
+    pix = engine.pool.get("dorf").pixels
+    assert pix[0] != (0, 0, 0)
+    await engine.switch("laterne-1", 0)
+    assert pix[0] == (0, 0, 0)
+
+
+@pytest.mark.asyncio
+async def test_house_and_window(engine):
+    await engine.switch("haus-a", 1)
+    pix = engine.pool.get("dorf").pixels
+    assert pix[2] != (0, 0, 0)
+    await engine.switch("haus-a.wz", 0)
+    assert pix[2] == (0, 0, 0)
+
+
+@pytest.mark.asyncio
+async def test_signal_atomic(engine):
+    await engine.switch("sig", 1)
+    pix = engine.pool.get("dorf").pixels
+    assert pix[5] == (0, 0, 0)
+    assert pix[6] == (0, 255, 0)
+    await engine.switch("sig", 0)
+    assert pix[5] == (255, 0, 0)
+    assert pix[6] == (0, 0, 0)
+
+
+@pytest.mark.asyncio
+async def test_sequence(engine):
+    await engine.switch("seq", 1)
+    pix = engine.pool.get("dorf").pixels
+    assert pix[0] != (0, 0, 0)
+    assert pix[2] != (0, 0, 0)
+    await engine.switch("seq", 0)
+    assert pix[0] == (0, 0, 0)
+    assert pix[2] == (0, 0, 0)

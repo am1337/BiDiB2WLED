@@ -1,0 +1,1145 @@
+const $ = (sel) => document.querySelector(sel);
+let cfg = {};
+let status = {};
+let wizardOpened = false;
+
+function isEditing() {
+  if (!$("#color-picker").classList.contains("hidden")) return true;
+  const el = document.activeElement;
+  if (!el) return false;
+  if (el.closest("#objects")) return false;
+  const tag = el.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
+}
+
+function showTab(name) {
+  document.querySelectorAll("nav button").forEach((b) => {
+    b.classList.toggle("active", b.dataset.tab === name);
+  });
+  document.querySelectorAll("main > section").forEach((s) => s.classList.add("hidden"));
+  $(`#tab-${name}`).classList.remove("hidden");
+}
+
+document.querySelectorAll("nav button").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    showTab(btn.dataset.tab);
+    if (btn.dataset.tab === "config") loadYaml();
+    if (btn.dataset.tab === "wizard") syncDiscovery();
+  });
+});
+
+async function api(path, opts) {
+  const res = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...opts,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const detail = data.detail;
+    let msg = res.statusText;
+    if (typeof detail === "string" && detail) msg = detail;
+    else if (Array.isArray(detail)) {
+      msg = detail.map((item) => item.msg || String(item)).join("; ");
+    }
+    throw new Error(msg || "Speichern fehlgeschlagen");
+  }
+  return data;
+}
+
+function notify(message, ok = true) {
+  const el = $("#toast");
+  el.textContent = message;
+  el.classList.remove("hidden", "toast-ok", "toast-bad");
+  el.classList.add(ok ? "toast-ok" : "toast-bad");
+  clearTimeout(notify._t);
+  notify._t = setTimeout(() => el.classList.add("hidden"), 3500);
+}
+
+$("#toast").onclick = () => $("#toast").classList.add("hidden");
+
+async function runAction(successMsg, fn) {
+  try {
+    const result = await fn();
+    if (result === false) return;
+    notify(successMsg, true);
+  } catch (e) {
+    notify(e.message || "Speichern fehlgeschlagen", false);
+  }
+}
+
+function parseHex(value) {
+  let s = String(value || "").trim().replace(/^#/, "").toUpperCase();
+  if (/^[0-9A-F]{3}$/.test(s)) s = s.split("").map((c) => c + c).join("");
+  return /^[0-9A-F]{6}$/.test(s) ? s : null;
+}
+
+function hexToRgb(hex) {
+  return {
+    r: parseInt(hex.slice(0, 2), 16),
+    g: parseInt(hex.slice(2, 4), 16),
+    b: parseInt(hex.slice(4, 6), 16),
+  };
+}
+
+function rgbToHex(r, g, b) {
+  const c = (n) => Math.max(0, Math.min(255, Number(n) || 0)).toString(16).padStart(2, "0");
+  return (c(r) + c(g) + c(b)).toUpperCase();
+}
+
+function rgbToHsv(r, g, b) {
+  r /= 255;
+  g /= 255;
+  b /= 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+  let h = 0;
+  if (d) {
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60;
+    if (h < 0) h += 360;
+  }
+  return { h, s: max ? d / max : 0, v: max };
+}
+
+function hsvToRgb(h, s, v) {
+  const f = (n) => {
+    const k = (n + h / 60) % 6;
+    return v - v * s * Math.max(Math.min(k, 4 - k, 1), 0);
+  };
+  return {
+    r: Math.round(f(5) * 255),
+    g: Math.round(f(3) * 255),
+    b: Math.round(f(1) * 255),
+  };
+}
+
+const colorPicker = {
+  field: null,
+  h: 30,
+  s: 0.62,
+  v: 1,
+};
+
+function syncSwatch(field, hex) {
+  const swatch = field.querySelector(".color-swatch");
+  const parsed = parseHex(hex) || parseHex(field.querySelector("input").value) || "000000";
+  swatch.style.background = `#${parsed}`;
+}
+
+function pickerHex() {
+  const { r, g, b } = hsvToRgb(colorPicker.h, colorPicker.s, colorPicker.v);
+  return rgbToHex(r, g, b);
+}
+
+function renderColorPicker(fromHexInput = false) {
+  const hex = pickerHex();
+  const rgb = hexToRgb(hex);
+  $("#cp-preview").style.background = `#${hex}`;
+  $("#cp-sv").style.setProperty("--pure-hue", `hsl(${colorPicker.h}, 100%, 50%)`);
+  $("#cp-hue-marker").style.transform = `rotate(${colorPicker.h}deg) translateY(-3.15rem)`;
+  $("#cp-sv-marker").style.left = `${colorPicker.s * 100}%`;
+  $("#cp-sv-marker").style.top = `${(1 - colorPicker.v) * 100}%`;
+  if (!fromHexInput && document.activeElement !== $("#cp-hex")) {
+    $("#cp-hex").value = `#${hex}`;
+  }
+  if (document.activeElement !== $("#cp-r")) $("#cp-r").value = String(rgb.r);
+  if (document.activeElement !== $("#cp-g")) $("#cp-g").value = String(rgb.g);
+  if (document.activeElement !== $("#cp-b")) $("#cp-b").value = String(rgb.b);
+  if (colorPicker.field) {
+    colorPicker.field.querySelector("input").value = hex;
+    syncSwatch(colorPicker.field, hex);
+  }
+}
+
+function setPickerFromHex(hex) {
+  const parsed = parseHex(hex);
+  if (!parsed) return false;
+  const rgb = hexToRgb(parsed);
+  const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b);
+  if (hsv.s > 0.001) colorPicker.h = hsv.h;
+  colorPicker.s = hsv.s;
+  colorPicker.v = hsv.v;
+  return true;
+}
+
+function openColorPicker(field) {
+  colorPicker.field = field;
+  setPickerFromHex(field.querySelector("input").value);
+  const picker = $("#color-picker");
+  const swatch = field.querySelector(".color-swatch");
+  const r = swatch.getBoundingClientRect();
+  picker.style.top = `${r.bottom + 6}px`;
+  picker.style.left = `${r.left}px`;
+  picker.classList.remove("hidden");
+  renderColorPicker();
+  const ph = picker.offsetHeight;
+  const pw = picker.offsetWidth;
+  picker.style.top = `${Math.min(r.bottom + 6, Math.max(8, window.innerHeight - ph - 8))}px`;
+  picker.style.left = `${Math.min(Math.max(8, r.left), Math.max(8, window.innerWidth - pw - 8))}px`;
+}
+
+function closeColorPicker() {
+  $("#color-picker").classList.add("hidden");
+  colorPicker.field = null;
+}
+
+function bindDrag(el, handler) {
+  el.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    el.setPointerCapture(e.pointerId);
+    handler(e);
+  });
+  el.addEventListener("pointermove", (e) => {
+    if (!el.hasPointerCapture(e.pointerId)) return;
+    handler(e);
+  });
+}
+
+function hueFromWheel(e) {
+  const r = $("#cp-wheel").getBoundingClientRect();
+  const dx = e.clientX - (r.left + r.width / 2);
+  const dy = e.clientY - (r.top + r.height / 2);
+  let deg = (Math.atan2(dx, -dy) * 180) / Math.PI;
+  if (deg < 0) deg += 360;
+  colorPicker.h = deg;
+  renderColorPicker();
+}
+
+function svFromPad(e) {
+  const r = $("#cp-sv").getBoundingClientRect();
+  colorPicker.s = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+  colorPicker.v = Math.min(1, Math.max(0, 1 - (e.clientY - r.top) / r.height));
+  renderColorPicker();
+}
+
+bindDrag($("#cp-wheel"), hueFromWheel);
+bindDrag($("#cp-sv"), svFromPad);
+
+$("#cp-hex").addEventListener("input", () => {
+  if (setPickerFromHex($("#cp-hex").value)) renderColorPicker(true);
+});
+
+for (const id of ["cp-r", "cp-g", "cp-b"]) {
+  document.getElementById(id).addEventListener("input", () => {
+    const hex = rgbToHex($("#cp-r").value, $("#cp-g").value, $("#cp-b").value);
+    setPickerFromHex(hex);
+    renderColorPicker();
+  });
+}
+
+document.querySelectorAll(".color-field").forEach((field) => {
+  const input = field.querySelector("input");
+  syncSwatch(field, input.value);
+  input.addEventListener("input", () => {
+    syncSwatch(field, input.value);
+    if (colorPicker.field === field && setPickerFromHex(input.value)) {
+      renderColorPicker();
+    }
+  });
+  field.querySelector(".color-swatch").addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (colorPicker.field === field && !$("#color-picker").classList.contains("hidden")) {
+      closeColorPicker();
+      return;
+    }
+    openColorPicker(field);
+  });
+});
+
+document.addEventListener("pointerdown", (e) => {
+  if ($("#color-picker").classList.contains("hidden")) return;
+  if ($("#color-picker").contains(e.target) || e.target.closest(".color-swatch")) return;
+  closeColorPicker();
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeColorPicker();
+});
+
+const LED_GROUPS = [
+  { ctrl: "id-ctrl", out: "id-out", led: "id-led" },
+  { ctrl: "l-ctrl", out: "l-out", led: "l-leds" },
+  { ctrl: "h-ctrl", out: "h-out", led: "h-leds" },
+  { ctrl: "sig-ctrl", out: "sig-out", led: "sig-leds" },
+];
+
+function controllerByName(name) {
+  return (status.controllers || []).find((c) => c.name === name) || null;
+}
+
+function outputsOf(name) {
+  const ctrl = controllerByName(name);
+  return (ctrl && ctrl.outputs) || [];
+}
+
+function fillOptions(el, options, current) {
+  if (!el) return;
+  if (!options.length) {
+    el.innerHTML = '<option value="">–</option>';
+    return;
+  }
+  el.innerHTML = options
+    .map((opt) => `<option value="${opt.value}">${opt.label}</option>`)
+    .join("");
+  const values = options.map((opt) => String(opt.value));
+  el.value = values.includes(String(current)) ? String(current) : values[0];
+}
+
+function fillOutputSelect(outId, ctrlName) {
+  const el = document.getElementById(outId);
+  const outs = outputsOf(ctrlName);
+  fillOptions(
+    el,
+    outs.map((out) => ({ value: out.id, label: out.label })),
+    el && el.value
+  );
+}
+
+function fillLedSelect(ledId, ctrlName, outId) {
+  const el = document.getElementById(ledId);
+  if (!el) return;
+  const outs = outputsOf(ctrlName);
+  const out = outs.find((item) => String(item.id) === String(outId)) || outs[0];
+  const selected = new Set([...el.selectedOptions].map((opt) => opt.value));
+  if (!out || !out.len) {
+    el.innerHTML = '<option value="">Keine LEDs</option>';
+    return;
+  }
+  el.innerHTML = Array.from({ length: out.len }, (_, i) => {
+    const global = out.start + i;
+    return `<option value="${i}">LED ${i + 1} (Nr. ${global})</option>`;
+  }).join("");
+  if (el.multiple) {
+    [...el.options].forEach((opt) => {
+      opt.selected = selected.has(opt.value);
+    });
+  } else if (selected.size && [...el.options].some((opt) => selected.has(opt.value))) {
+    el.value = [...selected][0];
+  }
+}
+
+function selectedLocals(ledId) {
+  const el = document.getElementById(ledId);
+  return [...el.selectedOptions].map((opt) => Number(opt.value)).filter((n) => Number.isFinite(n));
+}
+
+function toGlobals(ctrlName, outId, locals) {
+  const out = outputsOf(ctrlName).find((item) => String(item.id) === String(outId));
+  const start = out ? out.start : 0;
+  return locals.map((i) => start + i);
+}
+
+function syncLedDropdowns() {
+  for (const group of LED_GROUPS) {
+    const ctrl = document.getElementById(group.ctrl);
+    const out = document.getElementById(group.out);
+    if (!ctrl) continue;
+    fillOutputSelect(group.out, ctrl.value);
+    fillLedSelect(group.led, ctrl.value, out && out.value);
+  }
+}
+
+function fillCtrlSelects() {
+  const names = (cfg.controller || []).map((c) => c.name).filter(Boolean);
+  for (const id of ["id-ctrl", "l-ctrl", "h-ctrl", "sig-ctrl"]) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    const current = el.value;
+    if (!names.length) {
+      el.innerHTML = '<option value="">Kein Controller übernommen</option>';
+      continue;
+    }
+    el.innerHTML = names.map((n) => `<option value="${n}">${n}</option>`).join("");
+    el.value = names.includes(current) ? current : names[0];
+  }
+  syncLedDropdowns();
+}
+
+for (const group of LED_GROUPS) {
+  const ctrl = document.getElementById(group.ctrl);
+  const out = document.getElementById(group.out);
+  if (ctrl) {
+    ctrl.addEventListener("change", () => {
+      fillOutputSelect(group.out, ctrl.value);
+      const next = document.getElementById(group.out);
+      fillLedSelect(group.led, ctrl.value, next && next.value);
+    });
+  }
+  if (out) {
+    out.addEventListener("change", () => {
+      fillLedSelect(group.led, document.getElementById(group.ctrl).value, out.value);
+    });
+  }
+}
+
+function pairingStatus(b) {
+  if (b.logged_on) return "verbunden";
+  if (b.pairing_open) return "Modus aktiv – warte auf Verbindung";
+  if (b.pending) return "Anfrage offen";
+  if ((b.sessions || 0) > 0) return "Host verbunden, nicht angemeldet";
+  return "–";
+}
+
+function renderStatus() {
+  const b = status.bidib || {};
+  $("#bidib-dl").innerHTML = `
+    <dt>Knoten</dt><dd>${b.knotenname || ""}</dd>
+    <dt>UID</dt><dd><code>${b.unique_id || ""}</code></dd>
+    <dt>Port / Modus</dt><dd>${b.port} / ${b.modus} ${b.aktiv ? "" : "(aus)"}</dd>
+    <dt>Angemeldet</dt><dd class="${b.logged_on ? "ok" : "bad"}">${b.logged_on ? "ja" : "nein"} (${b.sessions || 0} Links)</dd>
+    <dt>Pairing</dt><dd>${pairingStatus(b)}</dd>
+    <dt>Vertraut</dt><dd>${(b.trusted || []).join(", ") || "–"}</dd>
+    <dt>Accessories</dt><dd>${Object.entries(b.accessories || {}).map(([k, v]) => `${k}→${v}`).join(", ") || "–"}</dd>
+  `;
+  const banner = $("#pairing-banner");
+  if (b.pending) {
+    banner.classList.remove("hidden");
+    banner.innerHTML = `Pairing nötig: <strong>${b.pending.user || b.pending.prod || b.pending.uid}</strong> ist verbunden, aber noch nicht vertraut. „Pairing-Modus“ drücken, um den Host zu akzeptieren.`;
+  } else if (!b.logged_on && (b.sessions || 0) > 0) {
+    banner.classList.remove("hidden");
+    banner.innerHTML = `Ein Host ist verbunden, aber noch nicht angemeldet. „Pairing-Modus“ sendet den Handshake erneut.`;
+  } else {
+    banner.classList.add("hidden");
+  }
+  $("#controllers").innerHTML = (status.controllers || [])
+    .map((c) => {
+      const href = c.url || (c.ip ? `http://${c.ip}:${c.port || 80}/` : "");
+      const ip = c.ip
+        ? `<a href="${href}" target="_blank" rel="noopener">${c.ip}</a>`
+        : "keine IP";
+      const outs = (c.outputs || []).map((o) => o.label).join(" · ");
+      return `<div><strong>${c.name}</strong> ${ip} · ${c.leds || "?"} LEDs ·
+      <span class="${c.reachable ? "ok" : "bad"}">${c.reachable ? "erreichbar" : "nicht erreichbar"}</span>
+      ${c.mac ? `<span class="chip">${c.mac}</span>` : ""}
+      ${outs ? `<div class="sub">${outs}</div>` : ""}</div>`;
+    })
+    .join("") || "<p>Noch kein Controller übernommen.</p>";
+  renderObjects();
+}
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function objectTestControl(o) {
+  if (o.states && o.states.length) {
+    const opts = o.states
+      .map((s) => `<option value="${esc(s.value)}" ${Number(s.value) === Number(o.state) ? "selected" : ""}>${esc(s.name)}</option>`)
+      .join("");
+    return `<select data-state="${esc(o.id)}" ${o.in_progress ? "disabled" : ""}>${opts}</select>`;
+  }
+  return `<label class="switch" title="Ein/Aus testen">
+    <input type="checkbox" data-switch="${esc(o.id)}" ${o.on ? "checked" : ""} ${o.in_progress ? "disabled" : ""}>
+    <span></span>
+  </label>`;
+}
+
+function renderObjects() {
+  const list = status.objects || [];
+  if (!list.length) {
+    $("#objects").innerHTML = "<p>Noch keine Objekte angelegt.</p>";
+    return;
+  }
+  $("#objects").innerHTML = `
+    <table><thead><tr><th>Objekt</th><th>Typ</th><th>Test</th><th></th></tr></thead><tbody>
+    ${list.map((o) => `
+      <tr>
+        <td>
+          <button type="button" class="obj-link" data-edit="${esc(o.id)}">${esc(o.id)}</button>
+          ${o.in_progress ? " …" : ""}
+          ${o.error ? ` <span class="bad">${esc(o.error)}</span>` : ""}
+        </td>
+        <td>${esc(o.kind_label || o.kind || "")}</td>
+        <td>${objectTestControl(o)}</td>
+        <td class="obj-actions">
+          <button type="button" class="secondary" data-edit="${esc(o.id)}">Ändern</button>
+          <button type="button" class="secondary danger" data-del="${esc(o.id)}">Löschen</button>
+        </td>
+      </tr>`).join("")}
+    </tbody></table>`;
+}
+
+async function refresh() {
+  if (isEditing()) return;
+  status = await api("/api/status");
+  cfg = await api("/api/config");
+  renderStatus();
+  fillCtrlSelects();
+  if (status.wizard && !wizardOpened) {
+    wizardOpened = true;
+    showTab("wizard");
+  }
+  if (!$("#tab-wizard").classList.contains("hidden")) {
+    await syncDiscovery();
+  }
+}
+
+function deviceKey(d) {
+  return `${d.ip}:${d.port || 80}`;
+}
+
+function suggestedName(d) {
+  const raw = (d.mdns || d.name || "").replace(/^wled-?/i, "").replace(/\.local$/i, "").trim();
+  if (!raw || /^[0-9a-f]{12}$/i.test(raw) || /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(raw)) {
+    return "dorf";
+  }
+  return raw;
+}
+
+function ensureDeviceRow(box, d) {
+  const key = deviceKey(d);
+  let row = box.querySelector(`[data-device="${key}"]`);
+  if (!row) {
+    row = document.createElement("div");
+    row.className = "row wrap";
+    row.dataset.device = key;
+    row.style.margin = ".4rem 0";
+    row.innerHTML = `
+      <span class="dev-label"></span>
+      <input class="claim-name" placeholder="Name z. B. dorf">
+      <button type="button">Übernehmen</button>`;
+    row.querySelector("button").addEventListener("click", () => claim(row.querySelector("button")));
+    const empty = box.querySelector("p");
+    if (empty) empty.remove();
+    box.appendChild(row);
+    row.querySelector(".claim-name").value = suggestedName(d);
+  }
+  const input = row.querySelector(".claim-name");
+  input.dataset.mac = d.mac || "";
+  input.dataset.ip = d.ip || "";
+  input.dataset.port = String(d.port || 80);
+  input.dataset.leds = String(d.led_count || 0);
+  input.dataset.mdns = d.mdns || "";
+  row.querySelector(".dev-label").textContent =
+    `${d.name} ${d.ip} · ${d.led_count} LEDs · ${d.mac || "keine MAC"}`;
+  return key;
+}
+
+async function syncDiscovery() {
+  const box = $("#unbound");
+  const data = await api("/api/discovery");
+  const devices = data.unbound || [];
+  if (!devices.length) {
+    if (!box.querySelector(".claim-name")) {
+      box.innerHTML = "<p>Keine unbekannten WLED-Geräte. mDNS prüfen oder IP von Hand eintragen.</p>";
+    }
+    return;
+  }
+  const seen = new Set(devices.map((d) => ensureDeviceRow(box, d)));
+  box.querySelectorAll("[data-device]").forEach((row) => {
+    if (!seen.has(row.dataset.device) && !row.contains(document.activeElement)) {
+      row.remove();
+    }
+  });
+}
+
+window.claim = (btn) => runAction("Controller übernommen", async () => {
+  const input = btn.parentElement.querySelector(".claim-name");
+  const name = input.value.trim();
+  if (!name) throw new Error("Bitte einen logischen Namen vergeben.");
+  await api("/api/controllers/claim", {
+    method: "POST",
+    body: JSON.stringify({
+      name,
+      mac: input.dataset.mac || null,
+      ip: input.dataset.ip,
+      port: Number(input.dataset.port || 80),
+      leds: Number(input.dataset.leds || 0) || null,
+      mdns: input.dataset.mdns || null,
+    }),
+  });
+  await refresh();
+  await syncDiscovery();
+});
+
+window.doSwitch = async (id, aspect) => {
+  try {
+    await api("/api/switch", { method: "POST", body: JSON.stringify({ object_id: id, aspect }) });
+    await refresh();
+  } catch (e) {
+    notify(e.message || "Schalten fehlgeschlagen", false);
+    await refresh();
+  }
+};
+
+$("#btn-pair").onclick = () => runAction("Pairing-Modus aktiv", async () => {
+  await api("/api/pairing/accept", { method: "POST" });
+  await refresh();
+  const b = status.bidib || {};
+  if (b.logged_on) {
+    notify("Pairing akzeptiert – Host ist angemeldet", true);
+    return false;
+  }
+  if (b.pending) {
+    notify("Host angenommen – warte auf Anmeldung", true);
+    return false;
+  }
+  notify("Pairing-Modus aktiv – warte auf Verbindung", true);
+  return false;
+});
+$("#btn-reject").onclick = () => runAction("Anfrage abgelehnt", async () => {
+  await api("/api/pairing/reject", { method: "POST" });
+  await refresh();
+});
+
+$("#w-save-adapter").onclick = () => runAction("Adapter gespeichert", async () => {
+  const next = await api("/api/config");
+  next.adapter = next.adapter || {};
+  next.adapter.netbidib = next.adapter.netbidib || {};
+  next.adapter.netbidib.aktiv = true;
+  next.adapter.netbidib.knotenname = $("#w-name").value;
+  next.adapter.netbidib.port = Number($("#w-port").value);
+  next.adapter.netbidib.modus = $("#w-mode").value;
+  await api("/api/config", { method: "PUT", body: JSON.stringify(next) });
+  await refresh();
+});
+
+$("#m-add").onclick = () => runAction("Controller hinzugefügt", async () => {
+  const name = $("#m-name").value.trim();
+  const ip = $("#m-ip").value.trim();
+  if (!name) throw new Error("Bitte einen Namen vergeben.");
+  if (!ip) throw new Error("Bitte eine IP-Adresse eintragen.");
+  await api("/api/controllers/manual", {
+    method: "POST",
+    body: JSON.stringify({
+      name,
+      ip,
+      leds: Number($("#m-leds").value) || null,
+    }),
+  });
+  await refresh();
+});
+
+$("#id-go").onclick = () => runAction("LED blinkt", async () => {
+  await api("/api/identify", {
+    method: "POST",
+    body: JSON.stringify({
+      controller: $("#id-ctrl").value,
+      output: Number($("#id-out").value),
+      index: Number($("#id-led").value),
+    }),
+  });
+});
+
+function parseLeds(text) {
+  return text.split(/[,\s]+/).filter(Boolean).map((x) => Number(x));
+}
+
+function setColorInput(id, hex) {
+  const input = document.getElementById(id);
+  if (!input) return;
+  input.value = parseHex(hex) || hex || "";
+  const field = input.closest(".color-field");
+  if (field) syncSwatch(field, input.value);
+}
+
+function selectLocals(ledId, locals) {
+  const el = document.getElementById(ledId);
+  if (!el) return;
+  const want = new Set((locals || []).map(String));
+  [...el.options].forEach((opt) => {
+    opt.selected = want.has(opt.value);
+  });
+}
+
+function locateLeds(ctrlName, globals) {
+  const outs = outputsOf(ctrlName);
+  const values = (globals || []).map(Number).filter((n) => Number.isFinite(n));
+  for (const out of outs) {
+    const locals = values.map((g) => g - out.start);
+    if (locals.length && locals.every((i) => i >= 0 && i < out.len)) {
+      return { outId: String(out.id), locals };
+    }
+  }
+  const first = values[0];
+  const out = outs.find((item) => first >= item.start && first < item.start + item.len) || outs[0];
+  if (!out) return { outId: "", locals: [] };
+  return {
+    outId: String(out.id),
+    locals: values.map((g) => g - out.start).filter((i) => i >= 0 && i < out.len),
+  };
+}
+
+const EDIT_META = {
+  lampe: { title: "l-title", create: "Lampe anlegen", edit: "Lampe bearbeiten", art: "art-lampe", cancel: "l-cancel" },
+  haus: { title: "h-title", create: "Haus anlegen", edit: "Haus bearbeiten", art: "art-haus", cancel: "h-cancel" },
+  gruppe: { title: "g-title", create: "Gruppe anlegen", edit: "Gruppe bearbeiten", art: "art-gruppe", cancel: "g-cancel" },
+  sequenz: { title: "s-title", create: "Sequenz anlegen", edit: "Sequenz bearbeiten", art: "art-sequenz", cancel: "s-cancel" },
+  signal: { title: "sig-title", create: "Signal anlegen", edit: "Signal bearbeiten", art: "art-signal", cancel: "sig-cancel" },
+};
+
+const editing = { kind: null, id: null };
+let editingWindow = null;
+
+function setEditing(kind, id) {
+  editing.kind = kind || null;
+  editing.id = id || null;
+  for (const [k, meta] of Object.entries(EDIT_META)) {
+    const active = Boolean(kind === k && id);
+    const title = document.getElementById(meta.title);
+    if (title) title.textContent = active ? meta.edit : meta.create;
+    const art = document.getElementById(meta.art);
+    if (art) art.classList.toggle("editing", active);
+    const cancel = document.getElementById(meta.cancel);
+    if (cancel) cancel.classList.toggle("hidden", !active);
+  }
+}
+
+function rewriteRef(value, oldId, newId) {
+  if (value === oldId) return newId;
+  if (typeof value === "string" && value.startsWith(`${oldId}.`)) return newId + value.slice(oldId.length);
+  return value;
+}
+
+function retargetRefs(cfg, oldId, newId) {
+  if (!oldId || oldId === newId) return;
+  for (const g of Object.values(cfg.gruppen || {})) {
+    g.mitglieder = (g.mitglieder || []).map((m) => rewriteRef(m, oldId, newId));
+  }
+  for (const seq of Object.values(cfg.sequenzen || {})) {
+    seq.gruppen = (seq.gruppen || []).map((m) => rewriteRef(m, oldId, newId));
+  }
+  const acc = cfg.adapter && cfg.adapter.netbidib && cfg.adapter.netbidib.accessories;
+  if (acc) {
+    for (const [key, value] of Object.entries(acc)) acc[key] = rewriteRef(value, oldId, newId);
+  }
+}
+
+function dropRefs(cfg, removed) {
+  const gone = new Set(removed);
+  for (const [gid, g] of Object.entries(cfg.gruppen || {})) {
+    g.mitglieder = (g.mitglieder || []).filter((m) => !gone.has(m));
+    if (!g.mitglieder.length) {
+      delete cfg.gruppen[gid];
+      gone.add(gid);
+    }
+  }
+  for (const [sid, seq] of Object.entries(cfg.sequenzen || {})) {
+    seq.gruppen = (seq.gruppen || []).filter((g) => !gone.has(g) && (cfg.gruppen || {})[g]);
+    if (!seq.gruppen.length) {
+      delete cfg.sequenzen[sid];
+      gone.add(sid);
+    }
+  }
+  const acc = cfg.adapter && cfg.adapter.netbidib && cfg.adapter.netbidib.accessories;
+  if (acc) {
+    for (const [key, value] of Object.entries(acc)) {
+      if (gone.has(value)) delete acc[key];
+    }
+  }
+}
+
+function removeObjectFromConfig(cfg, id) {
+  const removed = [];
+  if (cfg.lampen && cfg.lampen[id]) {
+    delete cfg.lampen[id];
+    removed.push(id);
+  } else if (cfg.haeuser && cfg.haeuser[id]) {
+    removed.push(id, ...Object.keys(cfg.haeuser[id].fenster || {}).map((w) => `${id}.${w}`));
+    delete cfg.haeuser[id];
+  } else if (cfg.gruppen && cfg.gruppen[id]) {
+    delete cfg.gruppen[id];
+    removed.push(id);
+  } else if (cfg.sequenzen && cfg.sequenzen[id]) {
+    delete cfg.sequenzen[id];
+    removed.push(id);
+  } else if (cfg.signale && cfg.signale[id]) {
+    delete cfg.signale[id];
+    removed.push(id);
+  } else if (id.includes(".")) {
+    const houseId = id.split(".")[0];
+    const win = id.slice(houseId.length + 1);
+    const house = cfg.haeuser && cfg.haeuser[houseId];
+    if (house && house.fenster && house.fenster[win]) {
+      delete house.fenster[win];
+      removed.push(id);
+    }
+  }
+  if (!removed.length) return false;
+  dropRefs(cfg, removed);
+  return true;
+}
+
+function replaceKey(map, oldId, newId, value) {
+  if (oldId && oldId !== newId && map[oldId]) delete map[oldId];
+  map[newId] = value;
+}
+
+function fensterToText(fenster) {
+  return Object.entries(fenster || {})
+    .map(([name, win]) => `${name}:${(win.leds || []).join(",")}:${win.farbe || "FFB060"}`)
+    .join("\n");
+}
+
+function parseFensterLines(text) {
+  const lines = [];
+  for (const raw of String(text || "").split("\n")) {
+    const t = raw.trim();
+    if (!t) continue;
+    const [name, leds, farbe] = t.split(":");
+    if (!name) continue;
+    lines.push({ name, leds: leds || "", farbe: (farbe || "FFB060").trim() });
+  }
+  return lines;
+}
+
+function fensterLinesToText(lines) {
+  return lines.map((win) => `${win.name}:${win.leds}:${win.farbe}`).join("\n");
+}
+
+function begriffeToText(begriffe) {
+  return Object.entries(begriffe || {})
+    .map(([asp, b]) => {
+      const leds = Object.entries(b.leds || {}).map(([idx, col]) => `${idx}=${col}`).join(",");
+      return `${asp}:${b.name || asp}:${leds}`;
+    })
+    .join("\n");
+}
+
+function loadLamp(id, lamp) {
+  $("#l-id").value = id;
+  $("#l-ctrl").value = lamp.controller;
+  fillOutputSelect("l-out", lamp.controller);
+  const located = locateLeds(lamp.controller, lamp.leds || []);
+  $("#l-out").value = located.outId;
+  fillLedSelect("l-leds", lamp.controller, located.outId);
+  selectLocals("l-leds", located.locals);
+  setColorInput("l-farbe", lamp.farbe || "FFB060");
+  setEditing("lampe", id);
+  $("#art-lampe").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function loadHouse(id, house, windowId) {
+  $("#h-id").value = id;
+  $("#h-ctrl").value = house.controller;
+  fillOutputSelect("h-out", house.controller);
+  $("#h-mode").value = house.einschalten || "zufaellig";
+  $("#h-fenster").value = fensterToText(house.fenster);
+  $("#h-win-name").value = windowId || "";
+  editingWindow = windowId || null;
+  const win = windowId && house.fenster ? house.fenster[windowId] : null;
+  if (win) {
+    const located = locateLeds(house.controller, win.leds || []);
+    $("#h-out").value = located.outId;
+    fillLedSelect("h-leds", house.controller, located.outId);
+    selectLocals("h-leds", located.locals);
+    setColorInput("h-win-farbe", win.farbe || "FFB060");
+  } else {
+    fillLedSelect("h-leds", house.controller, $("#h-out").value);
+    setColorInput("h-win-farbe", "FFB060");
+  }
+  setEditing("haus", id);
+  $("#art-haus").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function loadGroup(id, group) {
+  $("#g-id").value = id;
+  $("#g-mem").value = (group.mitglieder || []).join(", ");
+  setEditing("gruppe", id);
+  $("#art-gruppe").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function loadSequence(id, seq) {
+  $("#s-id").value = id;
+  $("#s-grp").value = (seq.gruppen || []).join(", ");
+  $("#s-ord").value = typeof seq.reihenfolge === "string" ? seq.reihenfolge : "definiert";
+  const delay = seq.verzoegerung;
+  if (Array.isArray(delay) && delay.length >= 2) {
+    $("#s-d1").value = delay[0];
+    $("#s-d2").value = delay[1];
+  }
+  setEditing("sequenz", id);
+  $("#art-sequenz").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function loadSignal(id, signal) {
+  $("#sig-id").value = id;
+  $("#sig-ctrl").value = signal.controller;
+  fillOutputSelect("sig-out", signal.controller);
+  fillLedSelect("sig-leds", signal.controller, $("#sig-out").value);
+  $("#sig-asp").value = begriffeToText(signal.begriffe);
+  setEditing("signal", id);
+  $("#art-signal").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function startEdit(id) {
+  const obj = (status.objects || []).find((item) => item.id === id);
+  let kind = obj && obj.kind;
+  let windowId = "";
+  if (kind === "fenster") {
+    const houseId = id.split(".")[0];
+    windowId = id.slice(houseId.length + 1);
+    id = houseId;
+    kind = "haus";
+  }
+  showTab("objects");
+  if (kind === "lampe" && cfg.lampen && cfg.lampen[id]) return loadLamp(id, cfg.lampen[id]);
+  if (kind === "haus" && cfg.haeuser && cfg.haeuser[id]) return loadHouse(id, cfg.haeuser[id], windowId);
+  if (kind === "gruppe" && cfg.gruppen && cfg.gruppen[id]) return loadGroup(id, cfg.gruppen[id]);
+  if (kind === "sequenz" && cfg.sequenzen && cfg.sequenzen[id]) return loadSequence(id, cfg.sequenzen[id]);
+  if (kind === "signal" && cfg.signale && cfg.signale[id]) return loadSignal(id, cfg.signale[id]);
+  notify("Objekt konnte nicht geladen werden.", false);
+}
+
+function cancelEdit(kind) {
+  if (kind === "lampe") {
+    $("#l-id").value = "";
+    setColorInput("l-farbe", "FFB060");
+  } else if (kind === "haus") {
+    $("#h-id").value = "";
+    $("#h-win-name").value = "";
+    $("#h-fenster").value = "";
+    setColorInput("h-win-farbe", "FFB060");
+    editingWindow = null;
+  } else if (kind === "gruppe") {
+    $("#g-id").value = "";
+    $("#g-mem").value = "";
+  } else if (kind === "sequenz") {
+    $("#s-id").value = "";
+    $("#s-grp").value = "";
+  } else if (kind === "signal") {
+    $("#sig-id").value = "";
+    $("#sig-asp").value = "";
+    $("#sig-asp-name").value = "";
+    setColorInput("sig-farbe", "FF0000");
+  }
+  setEditing(null, null);
+}
+
+async function deleteListedObject(id) {
+  if (!window.confirm(`„${id}“ wirklich löschen?`)) return;
+  await runAction("Objekt gelöscht", async () => {
+    const next = await api("/api/config");
+    if (!removeObjectFromConfig(next, id)) throw new Error("Objekt nicht gefunden.");
+    await api("/api/config", { method: "PUT", body: JSON.stringify(next) });
+    const editingId = editing.id;
+    const editingKind = editing.kind;
+    await refresh();
+    if (editingId === id) {
+      cancelEdit(editingKind);
+    } else if (editingKind === "haus" && editingId && id.startsWith(`${editingId}.`) && cfg.haeuser && cfg.haeuser[editingId]) {
+      loadHouse(editingId, cfg.haeuser[editingId]);
+    }
+  });
+}
+
+$("#objects").addEventListener("click", (e) => {
+  const del = e.target.closest("[data-del]");
+  if (del) {
+    e.preventDefault();
+    deleteListedObject(del.dataset.del);
+    return;
+  }
+  const edit = e.target.closest("[data-edit]");
+  if (edit) {
+    e.preventDefault();
+    startEdit(edit.dataset.edit);
+  }
+});
+
+$("#objects").addEventListener("change", (e) => {
+  const sw = e.target.closest("[data-switch]");
+  if (sw) {
+    doSwitch(sw.dataset.switch, sw.checked ? 1 : 0);
+    return;
+  }
+  const sel = e.target.closest("[data-state]");
+  if (sel) doSwitch(sel.dataset.state, Number(sel.value));
+});
+
+$("#l-cancel").onclick = () => cancelEdit("lampe");
+$("#h-cancel").onclick = () => cancelEdit("haus");
+$("#g-cancel").onclick = () => cancelEdit("gruppe");
+$("#s-cancel").onclick = () => cancelEdit("sequenz");
+$("#sig-cancel").onclick = () => cancelEdit("signal");
+
+$("#l-add").onclick = () => {
+  const updating = editing.kind === "lampe" && editing.id;
+  runAction(updating ? "Lampe gespeichert" : "Lampe angelegt", async () => {
+    const id = $("#l-id").value.trim();
+    const leds = toGlobals($("#l-ctrl").value, $("#l-out").value, selectedLocals("l-leds"));
+    if (!id) throw new Error("Bitte eine ID vergeben.");
+    if (!leds.length) throw new Error("Bitte mindestens eine LED wählen.");
+    const next = await api("/api/config");
+    next.lampen = next.lampen || {};
+    replaceKey(next.lampen, updating ? editing.id : null, id, {
+      controller: $("#l-ctrl").value,
+      leds,
+      farbe: parseHex($("#l-farbe").value) || "FFB060",
+    });
+    if (updating) retargetRefs(next, editing.id, id);
+    await api("/api/config", { method: "PUT", body: JSON.stringify(next) });
+    setEditing("lampe", id);
+    await refresh();
+  });
+};
+
+$("#h-win-add").onclick = () => {
+  const name = $("#h-win-name").value.trim();
+  const leds = toGlobals($("#h-ctrl").value, $("#h-out").value, selectedLocals("h-leds"));
+  const farbe = parseHex($("#h-win-farbe").value) || "FFB060";
+  if (!name) {
+    notify("Bitte einen Fensternamen vergeben.", false);
+    return;
+  }
+  if (!leds.length) {
+    notify("Bitte mindestens eine LED wählen.", false);
+    return;
+  }
+  const lines = parseFensterLines($("#h-fenster").value);
+  let idx = lines.findIndex((win) => win.name === name);
+  if (idx < 0 && editingWindow) idx = lines.findIndex((win) => win.name === editingWindow);
+  const existed = idx >= 0;
+  runAction(existed ? "Fenster aktualisiert" : "Fenster übernommen", () => {
+    const entry = { name, leds: leds.join(","), farbe };
+    if (idx >= 0) lines[idx] = entry;
+    else lines.push(entry);
+    $("#h-fenster").value = fensterLinesToText(lines);
+    editingWindow = null;
+  });
+};
+
+$("#h-add").onclick = () => {
+  const updating = editing.kind === "haus" && editing.id;
+  runAction(updating ? "Haus gespeichert" : "Haus angelegt", async () => {
+    const id = $("#h-id").value.trim();
+    if (!id) throw new Error("Bitte eine ID vergeben.");
+    const next = await api("/api/config");
+    const fenster = {};
+    for (const line of $("#h-fenster").value.split("\n")) {
+      const t = line.trim();
+      if (!t) continue;
+      const [name, leds, farbe] = t.split(":");
+      fenster[name] = { leds: parseLeds(leds || ""), farbe: (farbe || "FFB060").trim() };
+    }
+    if (!Object.keys(fenster).length) throw new Error("Bitte mindestens ein Fenster übernehmen.");
+    next.haeuser = next.haeuser || {};
+    replaceKey(next.haeuser, updating ? editing.id : null, id, {
+      controller: $("#h-ctrl").value,
+      einschalten: $("#h-mode").value,
+      fenster,
+    });
+    if (updating) retargetRefs(next, editing.id, id);
+    await api("/api/config", { method: "PUT", body: JSON.stringify(next) });
+    setEditing("haus", id);
+    await refresh();
+  });
+};
+
+$("#g-add").onclick = () => {
+  const updating = editing.kind === "gruppe" && editing.id;
+  runAction(updating ? "Gruppe gespeichert" : "Gruppe angelegt", async () => {
+    const id = $("#g-id").value.trim();
+    if (!id) throw new Error("Bitte eine ID vergeben.");
+    const next = await api("/api/config");
+    next.gruppen = next.gruppen || {};
+    replaceKey(next.gruppen, updating ? editing.id : null, id, {
+      mitglieder: $("#g-mem").value.split(",").map((s) => s.trim()).filter(Boolean),
+    });
+    if (updating) retargetRefs(next, editing.id, id);
+    await api("/api/config", { method: "PUT", body: JSON.stringify(next) });
+    setEditing("gruppe", id);
+    await refresh();
+  });
+};
+
+$("#s-add").onclick = () => {
+  const updating = editing.kind === "sequenz" && editing.id;
+  runAction(updating ? "Sequenz gespeichert" : "Sequenz angelegt", async () => {
+    const id = $("#s-id").value.trim();
+    if (!id) throw new Error("Bitte eine ID vergeben.");
+    const next = await api("/api/config");
+    next.sequenzen = next.sequenzen || {};
+    replaceKey(next.sequenzen, updating ? editing.id : null, id, {
+      gruppen: $("#s-grp").value.split(",").map((s) => s.trim()).filter(Boolean),
+      reihenfolge: $("#s-ord").value,
+      verzoegerung: [$("#s-d1").value, $("#s-d2").value],
+    });
+    if (updating) retargetRefs(next, editing.id, id);
+    await api("/api/config", { method: "PUT", body: JSON.stringify(next) });
+    setEditing("sequenz", id);
+    await refresh();
+  });
+};
+
+$("#sig-asp-add").onclick = () => runAction("Begriff übernommen", () => {
+  const asp = $("#sig-asp-n").value;
+  const name = $("#sig-asp-name").value.trim() || String(asp);
+  const farbe = parseHex($("#sig-farbe").value) || "FF0000";
+  const leds = toGlobals($("#sig-ctrl").value, $("#sig-out").value, selectedLocals("sig-leds"));
+  if (!leds.length) throw new Error("Bitte mindestens eine LED wählen.");
+  const line = `${asp}:${name}:${leds.map((i) => `${i}=${farbe}`).join(",")}`;
+  const ta = $("#sig-asp");
+  ta.value = ta.value.trim() ? `${ta.value.trim()}\n${line}` : line;
+});
+
+$("#sig-add").onclick = () => {
+  const updating = editing.kind === "signal" && editing.id;
+  runAction(updating ? "Signal gespeichert" : "Signal angelegt", async () => {
+    const id = $("#sig-id").value.trim();
+    if (!id) throw new Error("Bitte eine ID vergeben.");
+    const next = await api("/api/config");
+    const begriffe = {};
+    for (const line of $("#sig-asp").value.split("\n")) {
+      const t = line.trim();
+      if (!t) continue;
+      const [asp, name, rest] = t.split(":");
+      const leds = {};
+      for (const part of (rest || "").split(",")) {
+        const [idx, col] = part.split("=");
+        if (idx) leds[Number(idx)] = (col || "FF0000").trim();
+      }
+      begriffe[Number(asp)] = { name: name || String(asp), leds };
+    }
+    if (!Object.keys(begriffe).length) throw new Error("Bitte mindestens einen Begriff übernehmen.");
+    next.signale = next.signale || {};
+    replaceKey(next.signale, updating ? editing.id : null, id, { controller: $("#sig-ctrl").value, begriffe });
+    if (updating) retargetRefs(next, editing.id, id);
+    await api("/api/config", { method: "PUT", body: JSON.stringify(next) });
+    setEditing("signal", id);
+    await refresh();
+  });
+};
+
+async function loadYaml() {
+  const data = await api("/api/config");
+  $("#yaml").value = JSON.stringify(data, null, 2);
+  $("#yml-err").textContent = "";
+}
+
+$("#yml-apply").onclick = () => runAction("Konfiguration übernommen", async () => {
+  let payload;
+  try {
+    payload = JSON.parse($("#yaml").value);
+  } catch (e) {
+    $("#yml-err").textContent = e.message;
+    throw new Error("JSON ungültig – Speichern fehlgeschlagen");
+  }
+  try {
+    await api("/api/config", { method: "PUT", body: JSON.stringify(payload) });
+  } catch (e) {
+    $("#yml-err").textContent = e.message;
+    throw e;
+  }
+  $("#yml-err").textContent = "";
+  await refresh();
+});
+
+$("#yml-reload").onclick = () => runAction("Konfiguration neu geladen", async () => {
+  await api("/api/reload", { method: "POST" });
+  await refresh();
+  await loadYaml();
+});
+
+refresh();
+setInterval(() => {
+  if (!isEditing()) refresh();
+}, 4000);

@@ -1,0 +1,24 @@
+adapter:
+  netbidib:
+    aktiv: true
+    modus: server
+    port: 62875
+    knotenname: BiDiB2WLED
+  rocrail:
+    aktiv: false
+
+erkennung:
+  mdns: true
+  intervall: 30s
+  timeout: 90s
+
+web:
+  host: 0.0.0.0
+  port: 8080
+
+controller: []
+lampen: {}
+haeuser: {}
+gruppen: {}
+sequenzen: {}
+signale: {}

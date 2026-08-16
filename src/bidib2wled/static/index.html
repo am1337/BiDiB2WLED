@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BiDiB2WLED</title>
+  <link rel="stylesheet" href="/static/style.css?v=8">
+</head>
+<body>
+  <header>
+    <h1>BiDiB2WLED</h1>
+    <p class="sub" id="subtitle">Stufe 1 – virtueller BiDiB-Knoten für WLED</p>
+  </header>
+
+  <nav>
+    <button data-tab="status" class="active">Status</button>
+    <button data-tab="wizard">Einrichtung</button>
+    <button data-tab="objects">Objekte</button>
+    <button data-tab="config">YAML</button>
+  </nav>
+
+  <main>
+    <section id="tab-status">
+      <div id="pairing-banner" class="banner hidden"></div>
+      <div class="grid">
+        <article>
+          <h2>BiDiB</h2>
+          <dl id="bidib-dl"></dl>
+          <div class="row">
+            <button id="btn-pair">Pairing-Modus</button>
+            <button id="btn-reject" class="secondary">Anfrage ablehnen</button>
+          </div>
+        </article>
+        <article>
+          <h2>Controller</h2>
+          <div id="controllers"></div>
+        </article>
+      </div>
+      <article>
+        <h2>Verfügbare Objekte</h2>
+        <div id="objects"></div>
+      </article>
+    </section>
+
+    <section id="tab-wizard" class="hidden">
+      <article>
+        <h2>1. Adapter</h2>
+        <label>Knotenname <input id="w-name" value="BiDiB2WLED"></label>
+        <label>netBiDiB-Port <input id="w-port" type="number" value="62875"></label>
+        <label>Modus
+          <select id="w-mode">
+            <option value="server">Server (empfohlen – Host verbindet sich)</option>
+            <option value="client">Client</option>
+          </select>
+        </label>
+        <button id="w-save-adapter">Adapter speichern</button>
+      </article>
+      <article>
+        <h2>2. WLED-Controller</h2>
+        <p>Gefundene Geräte im Netz. Name vergeben und übernehmen.</p>
+        <div id="unbound"></div>
+        <h3>Von Hand (falls mDNS fehlt)</h3>
+        <div class="row wrap">
+          <input id="m-name" placeholder="Name z. B. dorf">
+          <input id="m-ip" placeholder="IP">
+          <input id="m-leds" type="number" placeholder="LEDs" min="1">
+          <button id="m-add">Hinzufügen</button>
+        </div>
+      </article>
+      <article>
+        <h2>3. LED identifizieren</h2>
+        <div class="row wrap">
+          <label>Controller <select id="id-ctrl"></select></label>
+          <label>Ausgang <select id="id-out"></select></label>
+          <label>LED <select id="id-led"></select></label>
+          <button id="id-go">Diese LED blinken lassen</button>
+        </div>
+      </article>
+    </section>
+
+    <section id="tab-objects" class="hidden">
+      <article id="art-lampe">
+        <h2 id="l-title">Lampe anlegen</h2>
+        <div class="row wrap">
+          <input id="l-id" placeholder="ID laterne-01">
+          <label>Controller <select id="l-ctrl"></select></label>
+          <label>Ausgang <select id="l-out"></select></label>
+          <label>LEDs (Strg für mehrere) <select id="l-leds" multiple size="6"></select></label>
+          <label>Farbe
+            <span class="color-field">
+              <span class="color-swatch" title="Farbe wählen"></span>
+              <input id="l-farbe" value="FFB060" placeholder="RRGGBB" size="8" spellcheck="false" autocomplete="off">
+            </span>
+          </label>
+          <button id="l-add">Lampe speichern</button>
+          <button type="button" id="l-cancel" class="secondary hidden">Abbrechen</button>
+        </div>
+      </article>
+      <article id="art-haus">
+        <h2 id="h-title">Haus anlegen</h2>
+        <p>Fenster über die Dropdowns wählen und „Fenster übernehmen“. Die Zeilen nutzen globale LED-Indizes.</p>
+        <div class="row wrap">
+          <input id="h-id" placeholder="ID haus-baecker">
+          <label>Controller <select id="h-ctrl"></select></label>
+          <select id="h-mode">
+            <option value="zufaellig">zufällig</option>
+            <option value="nacheinander">nacheinander</option>
+            <option value="sofort">sofort</option>
+          </select>
+        </div>
+        <div class="row wrap">
+          <input id="h-win-name" placeholder="Fenstername wohnzimmer">
+          <label>Ausgang <select id="h-out"></select></label>
+          <label>LEDs <select id="h-leds" multiple size="6"></select></label>
+          <label>Farbe
+            <span class="color-field">
+              <span class="color-swatch" title="Farbe wählen"></span>
+              <input id="h-win-farbe" value="FFB060" placeholder="RRGGBB" size="8" spellcheck="false" autocomplete="off">
+            </span>
+          </label>
+          <button type="button" id="h-win-add" class="secondary">Fenster übernehmen</button>
+        </div>
+        <textarea id="h-fenster" rows="4" placeholder="wohnzimmer:18,19:FFB060"></textarea>
+        <div class="row">
+          <button id="h-add">Haus speichern</button>
+          <button type="button" id="h-cancel" class="secondary hidden">Abbrechen</button>
+        </div>
+      </article>
+      <article id="art-gruppe">
+        <h2 id="g-title">Gruppe anlegen</h2>
+        <div class="row wrap">
+          <input id="g-id" placeholder="Gruppe hauptstrasse">
+          <input id="g-mem" placeholder="Mitglieder, kommagetrennt">
+          <button id="g-add">Gruppe speichern</button>
+          <button type="button" id="g-cancel" class="secondary hidden">Abbrechen</button>
+        </div>
+      </article>
+      <article id="art-sequenz">
+        <h2 id="s-title">Sequenz anlegen</h2>
+        <div class="row wrap">
+          <input id="s-id" placeholder="Sequenz seq-nacht">
+          <input id="s-grp" placeholder="Gruppen-IDs">
+          <select id="s-ord">
+            <option value="zufaellig">zufällig</option>
+            <option value="definiert">definiert</option>
+          </select>
+          <input id="s-d1" value="2s" placeholder="min">
+          <input id="s-d2" value="8s" placeholder="max">
+          <button id="s-add">Sequenz speichern</button>
+          <button type="button" id="s-cancel" class="secondary hidden">Abbrechen</button>
+        </div>
+      </article>
+      <article id="art-signal">
+        <h2 id="sig-title">Signal anlegen</h2>
+        <p>Begriffe über die Dropdowns wählen und „Begriff übernehmen“.</p>
+        <div class="row wrap">
+          <input id="sig-id" placeholder="signal-ausfahrt">
+          <label>Controller <select id="sig-ctrl"></select></label>
+          <label>Ausgang <select id="sig-out"></select></label>
+        </div>
+        <div class="row wrap">
+          <input id="sig-asp-n" type="number" min="0" value="0" title="Begriff-Nummer" placeholder="Nr.">
+          <input id="sig-asp-name" placeholder="Halt">
+          <label>LEDs <select id="sig-leds" multiple size="6"></select></label>
+          <label>Farbe
+            <span class="color-field">
+              <span class="color-swatch" title="Farbe wählen"></span>
+              <input id="sig-farbe" value="FF0000" placeholder="RRGGBB" size="8" spellcheck="false" autocomplete="off">
+            </span>
+          </label>
+          <button type="button" id="sig-asp-add" class="secondary">Begriff übernehmen</button>
+        </div>
+        <textarea id="sig-asp" rows="3" placeholder="0:Halt:12=FF0000&#10;2:Fahrt:14=00FF00"></textarea>
+        <div class="row">
+          <button id="sig-add">Signal speichern</button>
+          <button type="button" id="sig-cancel" class="secondary hidden">Abbrechen</button>
+        </div>
+      </article>
+    </section>
+
+    <section id="tab-config" class="hidden">
+      <article>
+        <p>Struktur der <code>config.yaml</code> als JSON. Nach „Übernehmen“ wird validiert und geladen (Adapterwechsel kann die BiDiB-Verbindung kurz trennen).</p>
+        <textarea id="yaml" rows="22" spellcheck="false"></textarea>
+        <div class="row">
+          <button id="yml-apply">Übernehmen</button>
+          <button id="yml-reload" class="secondary">Von Disk neu laden</button>
+        </div>
+        <pre id="yml-err" class="error"></pre>
+      </article>
+    </section>
+  </main>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+  <div id="color-picker" class="color-picker hidden" role="dialog" aria-label="Farbe wählen">
+    <div class="color-picker-preview" id="cp-preview"></div>
+    <div class="color-picker-visuals">
+      <div class="color-wheel" id="cp-wheel" title="Farbrad (Farbton)">
+        <div class="color-wheel-inner"></div>
+        <div class="hue-marker" id="cp-hue-marker"></div>
+      </div>
+      <div class="sv-pad" id="cp-sv" title="Sättigung und Helligkeit">
+        <div class="sv-marker" id="cp-sv-marker"></div>
+      </div>
+    </div>
+    <label>HTML <input id="cp-hex" placeholder="#FFB060" spellcheck="false" autocomplete="off"></label>
+    <div class="color-picker-rgb">
+      <label>R <input id="cp-r" type="number" min="0" max="255"></label>
+      <label>G <input id="cp-g" type="number" min="0" max="255"></label>
+      <label>B <input id="cp-b" type="number" min="0" max="255"></label>
+    </div>
+  </div>
+  <script src="/static/app.js?v=10"></script>
+</body>
+</html>

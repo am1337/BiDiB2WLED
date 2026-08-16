@@ -1,0 +1,17 @@
+[Unit]
+Description=BiDiB2WLED – BiDiB-Knoten für WLED-Beleuchtung
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bidib2wled
+Group=bidib2wled
+WorkingDirectory=/var/lib/bidib2wled
+ExecStart=/usr/bin/bidib2wled --config /etc/bidib2wled/config.yaml
+Restart=on-failure
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
