@@ -84,9 +84,53 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
 .switch input:checked + span { background: var(--ok); }
 .switch input:checked + span::before { transform: translateX(1.15rem); }
 .switch input:disabled + span { opacity: 0.55; cursor: default; }
+#objects td { vertical-align: middle; }
+#objects th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+#objects th.sortable:hover,
+#objects th.sort-active { color: var(--accent); }
 #objects td:last-child { white-space: nowrap; }
-#objects .obj-actions { display: flex; gap: 0.35rem; justify-content: flex-end; }
+#objects .obj-actions { display: flex; gap: 0.35rem; justify-content: flex-end; align-items: center; }
 #objects select { min-width: 7rem; }
+#objects input[data-address] { width: 4.5rem; }
+#g-mem, #s-grp { min-width: 14rem; }
+#s-d1, #s-d2 { width: 5.5rem; }
+#objects td.obj-info { overflow: visible; }
+#objects .obj-help-wrap { position: relative; display: inline-flex; }
+#objects .obj-help {
+  width: 1.45rem;
+  height: 1.45rem;
+  padding: 0;
+  border-radius: 999px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--muted);
+}
+#objects .obj-help:hover,
+#objects .obj-help-wrap:hover .obj-help {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+#objects .obj-help-box {
+  display: none;
+  position: absolute;
+  left: 0;
+  top: calc(100% + 8px);
+  z-index: 40;
+  width: max-content;
+  max-width: min(26rem, 70vw);
+  padding: 0.7rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.4;
+  white-space: normal;
+}
+#objects .obj-help-box strong { color: var(--text); font-weight: 600; }
+#objects .obj-help-wrap:hover .obj-help-box,
+#objects .obj-help-wrap:focus-within .obj-help-box { display: block; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
 dl { display: grid; grid-template-columns: 10rem 1fr; gap: 0.2rem 0.8rem; margin: 0 0 0.8rem; }
@@ -140,7 +184,7 @@ select[multiple] { min-width: 9rem; }
   cursor: pointer;
   flex-shrink: 0;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
-  background: #FFB060;
+  background: #FFFFFF;
 }
 .color-swatch:hover { border-color: var(--accent); }
 .color-field input { width: 6.5rem; }

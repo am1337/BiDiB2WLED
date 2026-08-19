@@ -204,23 +204,18 @@ Ablehnen: **Anfrage ablehnen**. Erneutes Pairing: UID unter `adapter.netbidib.tr
 
 ### 4. Accessory-Nummer nachschlagen
 
-Jedes Objekt in BiDiB2WLED ist ein BiDiB-**Accessory**. Die Nummer steht unter **Status → BiDiB → Accessories**, z. B.:
+Jedes Objekt in BiDiB2WLED ist ein BiDiB-**Accessory**. Die Nummer steht in der Objektliste (Spalte **Adresse**), z. B. `0` bei Aussenbeleuchtung Kirche. Dort lässt sie sich auch ändern. Die Spalten **Objekt**, **Typ** und **Adresse** sind sortierbar.
 
-```
-0→Aussenbeleuchtung Kirche
-1→Kirche
-```
+BiDiB zählt ab **0**, Rocrail ab **1**. Die Spalte **Info** nennt die Werte für Rocrail (Adresse **+ 1**, Port 0, …); weitere Programme wie WinDigipet können dort ergänzt werden.
 
-BiDiB zählt ab **0**, Rocrail ab **1**. Deshalb gilt immer:
+**Rocrail-Adresse = Adresse + 1**, **Port immer 0**.
 
-**Rocrail-Adresse = Accessory-Nummer + 1**, **Port immer 0**.
-
-| Statusseite (Bridge) | Rocrail-Adresse | Rocrail-Port |
+| Objektliste (Adresse) | Rocrail-Adresse | Rocrail-Port |
 |---|---|---|
-| `0→Aussenbeleuchtung Kirche` | **1** | 0 |
-| `1→Kirche` | **2** | 0 |
+| **0** Aussenbeleuchtung Kirche | 1 | 0 |
+| **1** Kirche | 2 | 0 |
 
-Ohne festen Eintrag in der YAML vergibt die Bridge die Nummern der Reihe nach (Fenster eines Hauses werden übersprungen – das Haus selbst ist schaltbar). Feste Nummern:
+Neue Objekte (z. B. ein Signal) bekommen automatisch die nächste freie Adresse und behalten sie. Ohne festen Eintrag vergibt die Bridge die Nummern der Reihe nach (Fenster eines Hauses werden übersprungen – das Haus selbst ist schaltbar). Feste Nummern in der YAML sind BiDiB-Indizes (0, 1, 2, …):
 
 ```yaml
 adapter:
@@ -248,7 +243,7 @@ BiDiB2WLED versteht nur **Accessory-Befehle**, keine einzelnen LC-Ports. Deshalb
 | **Bus** | `0` | ein virtueller Knoten |
 | **UID-Name** (falls vorhanden) | `BiDiB2WLED` oder leer | optional; Knotennamen von der Statusseite |
 | **Protokoll** | **Default** | nicht NMRA-DCC (das wäre ein DCC-Decoder hinter einer BiDiB-Zentrale) |
-| **Adresse** | Accessory-Nummer **+ 1** | BiDiB 0 = Rocrail 1 |
+| **Adresse** | Objektliste **+ 1** (steht unter Info) | BiDiB 0 = Rocrail 1 |
 | **Port** | `0` | flache BiDiB-Adressierung |
 | **Zubehör** | **Häkchen an** | sonst sendet Rocrail Port-Befehle, die die Bridge ignoriert |
 | **Weiche** / **Einzel-Ausgang** | aus | das ist ein Ein/Aus-Ausgang, keine Weiche |
@@ -272,7 +267,7 @@ Dieselben Ausgänge funktionieren in **Aktionen**, **Fahrstraßen** und **Fahrpl
 Kommt kein Schaltbefehl an:
 
 - Unter Status wirklich **Angemeldet: ja**?
-- Steht unter **Accessories** noch dieselbe Nummer wie in Rocrail (Adresse − 1)?
+- Steht unter **Info** dieselbe Rocrail-Adresse wie in Rocrail (Port 0)?
 - **Zubehör** an, **Protokoll Default**, **Port 0**, IID identisch zur Zentrale?
 - Test: Objekt in der Weboberfläche per Schalter umlegen – wenn das die LEDs schaltet, liegt der Fehler in der Rocrail-Adresse, nicht in WLED.
 
@@ -282,7 +277,7 @@ Ein Signal hat mehrere Begriffe (Aspekte), nicht nur an/aus.
 
 In Rocview: **Tabellen → Signale → Neu**.
 
-- IID, Bus, Adresse (+ 1), Port 0 und **Protokoll Default** wie beim Ausgang
+- IID, Bus, Adresse (Objektliste **+ 1**, siehe Spalte **Info**), Port 0 und **Protokoll Default** wie beim Ausgang
 - **Zubehör** aktivieren
 - Unter **Muster / Begriffe** die Begriffsnummern eintragen, die in BiDiB2WLED gelten, z. B.:
 

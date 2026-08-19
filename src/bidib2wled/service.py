@@ -10,7 +10,7 @@ from zeroconf.asyncio import AsyncZeroconf
 
 from bidib2wled.adapters import uid_to_hex
 from bidib2wled.adapters.netbidib import NetBidibAdapter
-from bidib2wled.config import AppConfig, ControllerConfig, load_config, save_config
+from bidib2wled.config import AppConfig, ControllerConfig, host_setup_info, load_config, save_config
 from bidib2wled.core import Engine
 from bidib2wled.wled import WledPool, normalize_mac
 from bidib2wled.wled.discovery import WledDiscovery, advertise_bidib_node, advertise_http
@@ -35,6 +35,8 @@ class Service:
     def _save(self) -> None:
         self.config.adapter.netbidib = self.bidib.net_cfg
         save_config(self.config_path, self.config)
+        if self.config_path.exists():
+            self._mtime = self.config_path.stat().st_mtime
 
     def status(self) -> dict:
         bound = []
@@ -77,11 +79,14 @@ class Service:
             "sequenz": "Sequenz",
             "signal": "Signal",
         }
+        acc_map = self.bidib.accessory_map()
+        acc_rev = {obj: anum for anum, obj in acc_map.items()}
         objects = []
         for obj_id in self.config.all_object_ids():
             st = self.engine.state_of(obj_id)
             kind = self.config.object_kind(obj_id) or "objekt"
             reported = st.reported_aspect()
+            anum = acc_rev.get(obj_id)
             item = {
                 "id": obj_id,
                 "kind": kind,
@@ -91,6 +96,9 @@ class Service:
                 "in_progress": st.in_progress,
                 "error": st.error,
                 "states": None,
+                "accessory": anum,
+                "address": anum,
+                "info": host_setup_info(kind, anum),
             }
             if kind == "signal":
                 begriffe = self.config.signale[obj_id].begriffe
@@ -144,8 +152,11 @@ class Service:
     async def start(self) -> None:
         self.engine.load(self.config)
         self.bidib.configure(self.config)
+        changed = self.config.ensure_accessories()
         if not self.config.adapter.netbidib.unique_id:
             self.config.adapter.netbidib.unique_id = uid_to_hex(self.bidib.uid)
+            changed = True
+        if changed:
             self._save()
         await self.pool.start()
         await self.discovery.start()
@@ -246,16 +257,24 @@ class Service:
 
     async def replace_config(self, payload: dict) -> dict:
         config = AppConfig.model_validate(payload)
+        config.ensure_accessories()
         save_config(self.config_path, config)
         self._mtime = self.config_path.stat().st_mtime
         await self.apply_config(config)
         return config.model_dump(by_alias=True)
+
+    async def set_object_address(self, object_id: str, address: int) -> dict:
+        self.config.set_accessory(object_id, address)
+        self._save()
+        self.bidib.configure(self.config)
+        return self.status()
 
     async def apply_config(self, config: AppConfig) -> None:
         old_port = self.config.adapter.netbidib.port
         old_mode = self.config.adapter.netbidib.modus
         old_aktiv = self.config.adapter.netbidib.aktiv
         self.config = config
+        filled = self.config.ensure_accessories()
         self.engine.load(config)
         net_changed = (
             config.adapter.netbidib.port != old_port
@@ -266,6 +285,8 @@ class Service:
             await self.bidib.restart(config)
         else:
             self.bidib.configure(config)
+        if filled:
+            self._save()
         await self._bind_all()
 
     async def claim_controller(

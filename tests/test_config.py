@@ -63,6 +63,65 @@ signale:
     assert cfg.aspect_count("sig") == 2
 
 
+def test_accessory_map_keeps_fixed_and_fills_new():
+    cfg = AppConfig.model_validate(
+        {
+            "adapter": {"netbidib": {"accessories": {0: "laterne-1"}}},
+            "controller": [{"name": "dorf", "ip": "127.0.0.1", "leds": 20}],
+            "lampen": {"laterne-1": {"controller": "dorf", "leds": [0]}},
+            "haeuser": {
+                "haus-a": {"controller": "dorf", "fenster": {"wz": {"leds": [2]}}},
+            },
+            "signale": {
+                "sig": {
+                    "controller": "dorf",
+                    "begriffe": {0: {"name": "Halt", "leds": {5: "FF0000"}}},
+                }
+            },
+        }
+    )
+    mapping = cfg.accessory_map()
+    assert mapping[0] == "laterne-1"
+    assert mapping[1] == "haus-a"
+    assert mapping[2] == "sig"
+    assert "haus-a.wz" not in mapping.values()
+    cfg.ensure_accessories()
+    assert cfg.adapter.netbidib.accessories[2] == "sig"
+
+
+def test_set_accessory_swaps():
+    cfg = AppConfig.model_validate(
+        {
+            "controller": [{"name": "dorf", "ip": "127.0.0.1", "leds": 8}],
+            "lampen": {
+                "lampe-a": {"controller": "dorf", "leds": [0]},
+                "lampe-b": {"controller": "dorf", "leds": [1]},
+            },
+        }
+    )
+    cfg.ensure_accessories()
+    assert cfg.adapter.netbidib.accessories == {0: "lampe-a", 1: "lampe-b"}
+    cfg.set_accessory("lampe-b", 0)
+    assert cfg.adapter.netbidib.accessories[0] == "lampe-b"
+    assert cfg.adapter.netbidib.accessories[1] == "lampe-a"
+    cfg.set_accessory("lampe-b", 4)
+    assert cfg.adapter.netbidib.accessories[4] == "lampe-b"
+    assert cfg.adapter.netbidib.accessories[1] == "lampe-a"
+
+
+def test_host_setup_info_rocrail_uses_plus_one():
+    from bidib2wled.config import host_setup_info
+
+    lamp = host_setup_info("lampe", 0)
+    assert lamp[0]["program"] == "Rocrail"
+    assert "Adresse 1 (Adresse+1)" in lamp[0]["text"]
+    signal = host_setup_info("signal", 2)
+    assert signal[0]["text"].startswith("Signal:")
+    assert "Adresse 3 (Adresse+1)" in signal[0]["text"]
+    window = host_setup_info("fenster", None)
+    assert "Haus" in window[0]["text"]
+
+
 def test_unknown_controller_rejected():
     try:
         AppConfig.model_validate({"lampen": {"x": {"controller": "nein", "leds": [0]}}})

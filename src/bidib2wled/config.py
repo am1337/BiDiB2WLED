@@ -51,7 +51,7 @@ class LampConfig(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     controller: str
     leds: list[int] = Field(min_length=1)
-    farbe: str = "FFB060"
+    farbe: str = "FFFFFF"
     helligkeit: int = Field(default=180, ge=0, le=255)
 
     @field_validator("farbe")
@@ -66,7 +66,7 @@ class LampConfig(BaseModel):
 class FensterConfig(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     leds: list[int] = Field(min_length=1)
-    farbe: str = "FFB060"
+    farbe: str = "FFFFFF"
     helligkeit: int = Field(default=180, ge=0, le=255)
 
     @field_validator("farbe")
@@ -220,12 +220,75 @@ class AppConfig(BaseModel):
                 return item
         return None
 
+    def switchable_object_ids(self) -> list[str]:
+        """Objekte mit eigener BiDiB-Accessory-Nummer (Fenster nur nach Handzuweisung)."""
+        return list(self.lampen) + list(self.haeuser) + list(self.gruppen) + list(self.sequenzen) + list(self.signale)
+
     def all_object_ids(self) -> list[str]:
-        ids = list(self.lampen) + list(self.haeuser) + list(self.gruppen)
-        ids += list(self.sequenzen) + list(self.signale)
+        ids = self.switchable_object_ids()
         for house_id, house in self.haeuser.items():
             ids.extend(f"{house_id}.{window_id}" for window_id in house.fenster)
         return ids
+
+    def accessory_map(self) -> dict[int, str]:
+        """BiDiB-Accessory-Index (ab 0) → Objekt. Feste YAML-Nummern bleiben, Rest bekommt die nächste freie."""
+        known = set(self.all_object_ids())
+        mapping: dict[int, str] = {}
+        used: set[str] = set()
+        for anum, obj_id in self.adapter.netbidib.accessories.items():
+            try:
+                idx = int(anum)
+            except (TypeError, ValueError):
+                continue
+            if obj_id in known and obj_id not in used:
+                mapping[idx] = obj_id
+                used.add(obj_id)
+        next_n = 0
+        for obj_id in self.switchable_object_ids():
+            if obj_id in used:
+                continue
+            while next_n in mapping:
+                next_n += 1
+            mapping[next_n] = obj_id
+            used.add(obj_id)
+            next_n += 1
+        return dict(sorted(mapping.items()))
+
+    def ensure_accessories(self) -> bool:
+        filled = self.accessory_map()
+        current = {int(k): v for k, v in self.adapter.netbidib.accessories.items()}
+        if current == filled:
+            return False
+        self.adapter.netbidib.accessories = filled
+        return True
+
+    def set_accessory(self, object_id: str, accessory: int) -> None:
+        if self.object_kind(object_id) is None:
+            raise ValueError(f"Unbekanntes Objekt: {object_id}")
+        if accessory < 0 or accessory > 255:
+            raise ValueError("Adresse muss zwischen 0 und 255 liegen")
+        self.ensure_accessories()
+        mapping = dict(self.adapter.netbidib.accessories)
+        reverse = {obj: anum for anum, obj in mapping.items()}
+        new_anum = accessory
+        old_anum = reverse.get(object_id)
+        occupant = mapping.get(new_anum)
+        if occupant == object_id:
+            return
+        if occupant is not None and old_anum is not None:
+            mapping[old_anum] = occupant
+            mapping[new_anum] = object_id
+        elif occupant is not None:
+            free = 0
+            while free in mapping:
+                free += 1
+            mapping[free] = occupant
+            mapping[new_anum] = object_id
+        else:
+            if old_anum is not None:
+                del mapping[old_anum]
+            mapping[new_anum] = object_id
+        self.adapter.netbidib.accessories = dict(sorted(mapping.items()))
 
     def object_kind(self, object_id: str) -> str | None:
         if object_id in self.lampen:
@@ -250,6 +313,27 @@ class AppConfig(BaseModel):
             begriffe = self.signale[object_id].begriffe
             return max(begriffe) + 1 if begriffe else 2
         return 2
+
+
+def host_setup_info(kind: str, accessory: int | None) -> list[dict[str, str]]:
+    """Kurzanleitung je Steuerungssoftware (Info-Spalte). Weitere Programme als Builder ergänzen."""
+    builders = (_rocrail_setup,)
+    return [row for build in builders if (row := build(kind, accessory))]
+
+
+def _rocrail_setup(kind: str, accessory: int | None) -> dict[str, str] | None:
+    if accessory is None:
+        if kind == "fenster":
+            return {
+                "program": "Rocrail",
+                "text": "keine eigene Adresse – das Haus schalten (Ausgang, Port 0, Zubehör an, Protokoll Default)",
+            }
+        return None
+    rocrail = accessory + 1
+    base = f"Adresse {rocrail} (Adresse+1), Port 0, Bus 0, Protokoll Default, Zubehör an"
+    if kind == "signal":
+        return {"program": "Rocrail", "text": f"Signal: {base}; Begriffe wie in der Auswahl"}
+    return {"program": "Rocrail", "text": f"Ausgang: {base}"}
 
 
 def default_config() -> AppConfig:

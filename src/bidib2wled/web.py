@@ -33,8 +33,9 @@ class IdentifyBody(BaseModel):
     output: int = 0
 
 
-class AccessoryBody(BaseModel):
-    mapping: dict[int, str] = Field(default_factory=dict)
+class AddressBody(BaseModel):
+    object_id: str
+    address: int = Field(ge=0, le=255)
 
 
 def create_app(service: "Service") -> FastAPI:
@@ -100,6 +101,13 @@ def create_app(service: "Service") -> FastAPI:
         try:
             await service.engine.identify_led(body.controller, body.index, body.output)
             return {"ok": True}
+        except Exception as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/address")
+    async def set_address(body: AddressBody) -> dict[str, Any]:
+        try:
+            return await service.set_object_address(body.object_id, body.address)
         except Exception as exc:
             raise HTTPException(400, str(exc)) from exc
 

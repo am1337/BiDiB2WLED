@@ -1,4 +1,5 @@
 const $ = (sel) => document.querySelector(sel);
+const DEFAULT_COLOR = "FFFFFF";
 let cfg = {};
 let status = {};
 let wizardOpened = false;
@@ -7,6 +8,7 @@ function isEditing() {
   if (!$("#color-picker").classList.contains("hidden")) return true;
   const el = document.activeElement;
   if (!el) return false;
+  if (el.closest("[data-address]")) return true;
   if (el.closest("#objects")) return false;
   const tag = el.tagName;
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
@@ -73,6 +75,15 @@ function parseHex(value) {
   return /^[0-9A-F]{6}$/.test(s) ? s : null;
 }
 
+function durationSeconds(value, fallback = 0) {
+  const n = parseFloat(String(value ?? "").replace(/s$/i, "").trim());
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function durationToken(seconds) {
+  return `${seconds}s`;
+}
+
 function hexToRgb(hex) {
   return {
     r: parseInt(hex.slice(0, 2), 16),
@@ -118,8 +129,8 @@ function hsvToRgb(h, s, v) {
 
 const colorPicker = {
   field: null,
-  h: 30,
-  s: 0.62,
+  h: 0,
+  s: 0,
   v: 1,
 };
 
@@ -359,6 +370,80 @@ function fillCtrlSelects() {
   syncLedDropdowns();
 }
 
+function groupMemberSections(excludeId) {
+  const sections = [];
+  const add = (label, ids) => {
+    const items = ids.filter((id) => id && id !== excludeId);
+    if (items.length) sections.push({ label, items });
+  };
+  add("Lampen", Object.keys(cfg.lampen || {}));
+  add("Häuser", Object.keys(cfg.haeuser || {}));
+  const windows = [];
+  for (const [houseId, house] of Object.entries(cfg.haeuser || {})) {
+    for (const windowId of Object.keys(house.fenster || {})) {
+      windows.push(`${houseId}.${windowId}`);
+    }
+  }
+  add("Fenster", windows);
+  add("Signale", Object.keys(cfg.signale || {}));
+  add("Gruppen", Object.keys(cfg.gruppen || {}));
+  add("Sequenzen", Object.keys(cfg.sequenzen || {}));
+  return sections;
+}
+
+function fillGroupMemberSelect(selected) {
+  const el = $("#g-mem");
+  if (!el) return;
+  const keep = selected
+    ? new Set(selected.map(String))
+    : new Set([...el.selectedOptions].map((opt) => opt.value));
+  const exclude = editing.kind === "gruppe" && editing.id ? editing.id : null;
+  const sections = groupMemberSections(exclude);
+  if (!sections.length) {
+    el.innerHTML = '<option value="">Keine Objekte angelegt</option>';
+    el.disabled = true;
+    return;
+  }
+  el.disabled = false;
+  el.innerHTML = sections
+    .map(
+      (section) =>
+        `<optgroup label="${esc(section.label)}">${section.items
+          .map((id) => `<option value="${esc(id)}">${esc(id)}</option>`)
+          .join("")}</optgroup>`
+    )
+    .join("");
+  [...el.options].forEach((opt) => {
+    opt.selected = keep.has(opt.value);
+  });
+}
+
+function fillMultiSelect(el, items, selected, emptyLabel) {
+  if (!el) return;
+  const keep = selected
+    ? new Set(selected.map(String))
+    : new Set([...el.selectedOptions].map((opt) => opt.value));
+  if (!items.length) {
+    el.innerHTML = `<option value="">${esc(emptyLabel)}</option>`;
+    el.disabled = true;
+    return;
+  }
+  el.disabled = false;
+  el.innerHTML = items.map((id) => `<option value="${esc(id)}">${esc(id)}</option>`).join("");
+  [...el.options].forEach((opt) => {
+    opt.selected = keep.has(opt.value);
+  });
+}
+
+function fillSequenceGroupSelect(selected) {
+  fillMultiSelect($("#s-grp"), Object.keys(cfg.gruppen || {}), selected, "Keine Gruppen angelegt");
+}
+
+function selectedMembers(selectId) {
+  const el = document.getElementById(selectId);
+  return [...el.selectedOptions].map((opt) => opt.value).filter(Boolean);
+}
+
 for (const group of LED_GROUPS) {
   const ctrl = document.getElementById(group.ctrl);
   const out = document.getElementById(group.out);
@@ -393,7 +478,6 @@ function renderStatus() {
     <dt>Angemeldet</dt><dd class="${b.logged_on ? "ok" : "bad"}">${b.logged_on ? "ja" : "nein"} (${b.sessions || 0} Links)</dd>
     <dt>Pairing</dt><dd>${pairingStatus(b)}</dd>
     <dt>Vertraut</dt><dd>${(b.trusted || []).join(", ") || "–"}</dd>
-    <dt>Accessories</dt><dd>${Object.entries(b.accessories || {}).map(([k, v]) => `${k}→${v}`).join(", ") || "–"}</dd>
   `;
   const banner = $("#pairing-banner");
   if (b.pending) {
@@ -442,6 +526,48 @@ function objectTestControl(o) {
   </label>`;
 }
 
+function objectInfoCell(o) {
+  const rows = o.info || [];
+  const body = rows.length
+    ? rows.map((row) => `<div><strong>${esc(row.program)}:</strong> ${esc(row.text)}</div>`).join("")
+    : "Keine Hinweise.";
+  return `<span class="obj-help-wrap">
+    <button type="button" class="obj-help" aria-label="Info">?</button>
+    <div class="obj-help-box" role="tooltip">${body}</div>
+  </span>`;
+}
+
+let objectSort = { key: "id", dir: 1 };
+
+function sortMark(key) {
+  if (objectSort.key !== key) return "";
+  return objectSort.dir > 0 ? " ▲" : " ▼";
+}
+
+function sortHeader(key, label) {
+  const active = objectSort.key === key ? " sort-active" : "";
+  return `<th class="sortable${active}" data-sort="${key}" title="Nach ${esc(label)} sortieren">${esc(label)}${sortMark(key)}</th>`;
+}
+
+function sortedObjects(list) {
+  const dir = objectSort.dir;
+  const key = objectSort.key;
+  return list.slice().sort((a, b) => {
+    let cmp = 0;
+    if (key === "address") {
+      const aa = a.address == null ? Number.POSITIVE_INFINITY : Number(a.address);
+      const bb = b.address == null ? Number.POSITIVE_INFINITY : Number(b.address);
+      cmp = aa - bb;
+    } else if (key === "kind") {
+      cmp = String(a.kind_label || a.kind || "").localeCompare(String(b.kind_label || b.kind || ""), "de");
+      if (!cmp) cmp = String(a.id || "").localeCompare(String(b.id || ""), "de");
+    } else {
+      cmp = String(a.id || "").localeCompare(String(b.id || ""), "de");
+    }
+    return cmp * dir;
+  });
+}
+
 function renderObjects() {
   const list = status.objects || [];
   if (!list.length) {
@@ -449,8 +575,8 @@ function renderObjects() {
     return;
   }
   $("#objects").innerHTML = `
-    <table><thead><tr><th>Objekt</th><th>Typ</th><th>Test</th><th></th></tr></thead><tbody>
-    ${list.map((o) => `
+    <table><thead><tr>${sortHeader("id", "Objekt")}${sortHeader("kind", "Typ")}${sortHeader("address", "Adresse")}<th>Info</th><th>Test</th><th></th></tr></thead><tbody>
+    ${sortedObjects(list).map((o) => `
       <tr>
         <td>
           <button type="button" class="obj-link" data-edit="${esc(o.id)}">${esc(o.id)}</button>
@@ -458,21 +584,32 @@ function renderObjects() {
           ${o.error ? ` <span class="bad">${esc(o.error)}</span>` : ""}
         </td>
         <td>${esc(o.kind_label || o.kind || "")}</td>
+        <td>
+          <input type="number" min="0" max="255" step="1" data-address="${esc(o.id)}"
+            value="${o.address != null ? esc(o.address) : ""}"
+            placeholder="—"
+            title="BiDiB-Accessory-Adresse. Fenster ohne eigene Adresse über das Haus schalten.">
+        </td>
+        <td class="obj-info">${objectInfoCell(o)}</td>
         <td>${objectTestControl(o)}</td>
-        <td class="obj-actions">
-          <button type="button" class="secondary" data-edit="${esc(o.id)}">Ändern</button>
-          <button type="button" class="secondary danger" data-del="${esc(o.id)}">Löschen</button>
+        <td>
+          <div class="obj-actions">
+            <button type="button" class="secondary" data-edit="${esc(o.id)}">Ändern</button>
+            <button type="button" class="secondary danger" data-del="${esc(o.id)}">Löschen</button>
+          </div>
         </td>
       </tr>`).join("")}
     </tbody></table>`;
 }
 
-async function refresh() {
-  if (isEditing()) return;
+async function refresh(force = false) {
+  if (!force && isEditing()) return;
   status = await api("/api/status");
   cfg = await api("/api/config");
   renderStatus();
   fillCtrlSelects();
+  fillGroupMemberSelect();
+  fillSequenceGroupSelect();
   if (status.wizard && !wizardOpened) {
     wizardOpened = true;
     showTab("wizard");
@@ -775,7 +912,7 @@ function replaceKey(map, oldId, newId, value) {
 
 function fensterToText(fenster) {
   return Object.entries(fenster || {})
-    .map(([name, win]) => `${name}:${(win.leds || []).join(",")}:${win.farbe || "FFB060"}`)
+    .map(([name, win]) => `${name}:${(win.leds || []).join(",")}:${win.farbe || DEFAULT_COLOR}`)
     .join("\n");
 }
 
@@ -786,7 +923,7 @@ function parseFensterLines(text) {
     if (!t) continue;
     const [name, leds, farbe] = t.split(":");
     if (!name) continue;
-    lines.push({ name, leds: leds || "", farbe: (farbe || "FFB060").trim() });
+    lines.push({ name, leds: leds || "", farbe: (farbe || DEFAULT_COLOR).trim() });
   }
   return lines;
 }
@@ -812,7 +949,7 @@ function loadLamp(id, lamp) {
   $("#l-out").value = located.outId;
   fillLedSelect("l-leds", lamp.controller, located.outId);
   selectLocals("l-leds", located.locals);
-  setColorInput("l-farbe", lamp.farbe || "FFB060");
+  setColorInput("l-farbe", lamp.farbe || DEFAULT_COLOR);
   setEditing("lampe", id);
   $("#art-lampe").scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -831,10 +968,10 @@ function loadHouse(id, house, windowId) {
     $("#h-out").value = located.outId;
     fillLedSelect("h-leds", house.controller, located.outId);
     selectLocals("h-leds", located.locals);
-    setColorInput("h-win-farbe", win.farbe || "FFB060");
+    setColorInput("h-win-farbe", win.farbe || DEFAULT_COLOR);
   } else {
     fillLedSelect("h-leds", house.controller, $("#h-out").value);
-    setColorInput("h-win-farbe", "FFB060");
+    setColorInput("h-win-farbe", DEFAULT_COLOR);
   }
   setEditing("haus", id);
   $("#art-haus").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -842,21 +979,21 @@ function loadHouse(id, house, windowId) {
 
 function loadGroup(id, group) {
   $("#g-id").value = id;
-  $("#g-mem").value = (group.mitglieder || []).join(", ");
   setEditing("gruppe", id);
+  fillGroupMemberSelect(group.mitglieder || []);
   $("#art-gruppe").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function loadSequence(id, seq) {
   $("#s-id").value = id;
-  $("#s-grp").value = (seq.gruppen || []).join(", ");
   $("#s-ord").value = typeof seq.reihenfolge === "string" ? seq.reihenfolge : "definiert";
   const delay = seq.verzoegerung;
   if (Array.isArray(delay) && delay.length >= 2) {
-    $("#s-d1").value = delay[0];
-    $("#s-d2").value = delay[1];
+    $("#s-d1").value = durationSeconds(delay[0], 2);
+    $("#s-d2").value = durationSeconds(delay[1], 8);
   }
   setEditing("sequenz", id);
+  fillSequenceGroupSelect(seq.gruppen || []);
   $("#art-sequenz").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -892,26 +1029,35 @@ function startEdit(id) {
 function cancelEdit(kind) {
   if (kind === "lampe") {
     $("#l-id").value = "";
-    setColorInput("l-farbe", "FFB060");
+    setColorInput("l-farbe", DEFAULT_COLOR);
   } else if (kind === "haus") {
     $("#h-id").value = "";
     $("#h-win-name").value = "";
     $("#h-fenster").value = "";
-    setColorInput("h-win-farbe", "FFB060");
+    setColorInput("h-win-farbe", DEFAULT_COLOR);
     editingWindow = null;
   } else if (kind === "gruppe") {
     $("#g-id").value = "";
-    $("#g-mem").value = "";
+    fillGroupMemberSelect([]);
   } else if (kind === "sequenz") {
     $("#s-id").value = "";
-    $("#s-grp").value = "";
+    fillSequenceGroupSelect([]);
+    $("#s-d1").value = "2";
+    $("#s-d2").value = "8";
   } else if (kind === "signal") {
     $("#sig-id").value = "";
     $("#sig-asp").value = "";
     $("#sig-asp-name").value = "";
     setColorInput("sig-farbe", "FF0000");
+    const aspN = $("#sig-asp-n");
+    if (aspN) aspN.value = "0";
   }
   setEditing(null, null);
+}
+
+async function afterSave(kind) {
+  cancelEdit(kind);
+  await refresh(true);
 }
 
 async function deleteListedObject(id) {
@@ -932,6 +1078,15 @@ async function deleteListedObject(id) {
 }
 
 $("#objects").addEventListener("click", (e) => {
+  const sort = e.target.closest("[data-sort]");
+  if (sort) {
+    e.preventDefault();
+    const key = sort.dataset.sort;
+    if (objectSort.key === key) objectSort.dir *= -1;
+    else objectSort = { key, dir: 1 };
+    renderObjects();
+    return;
+  }
   const del = e.target.closest("[data-del]");
   if (del) {
     e.preventDefault();
@@ -946,6 +1101,31 @@ $("#objects").addEventListener("click", (e) => {
 });
 
 $("#objects").addEventListener("change", (e) => {
+  const addr = e.target.closest("[data-address]");
+  if (addr) {
+    const value = Number(addr.value);
+    const previous = (status.objects || []).find((item) => item.id === addr.dataset.address);
+    if (!Number.isInteger(value) || value < 0) {
+      addr.value = previous && previous.address != null ? previous.address : "";
+      notify("Adresse muss eine Zahl ab 0 sein.", false);
+      return;
+    }
+    runAction("Adresse gespeichert", async () => {
+      try {
+        const data = await api("/api/address", {
+          method: "POST",
+          body: JSON.stringify({ object_id: addr.dataset.address, address: value }),
+        });
+        status = data;
+        cfg = await api("/api/config");
+        renderStatus();
+      } catch (err) {
+        addr.value = previous && previous.address != null ? previous.address : "";
+        throw err;
+      }
+    });
+    return;
+  }
   const sw = e.target.closest("[data-switch]");
   if (sw) {
     doSwitch(sw.dataset.switch, sw.checked ? 1 : 0);
@@ -973,19 +1153,18 @@ $("#l-add").onclick = () => {
     replaceKey(next.lampen, updating ? editing.id : null, id, {
       controller: $("#l-ctrl").value,
       leds,
-      farbe: parseHex($("#l-farbe").value) || "FFB060",
+      farbe: parseHex($("#l-farbe").value) || DEFAULT_COLOR,
     });
     if (updating) retargetRefs(next, editing.id, id);
     await api("/api/config", { method: "PUT", body: JSON.stringify(next) });
-    setEditing("lampe", id);
-    await refresh();
+    await afterSave("lampe");
   });
 };
 
 $("#h-win-add").onclick = () => {
   const name = $("#h-win-name").value.trim();
   const leds = toGlobals($("#h-ctrl").value, $("#h-out").value, selectedLocals("h-leds"));
-  const farbe = parseHex($("#h-win-farbe").value) || "FFB060";
+  const farbe = parseHex($("#h-win-farbe").value) || DEFAULT_COLOR;
   if (!name) {
     notify("Bitte einen Fensternamen vergeben.", false);
     return;
@@ -1018,7 +1197,7 @@ $("#h-add").onclick = () => {
       const t = line.trim();
       if (!t) continue;
       const [name, leds, farbe] = t.split(":");
-      fenster[name] = { leds: parseLeds(leds || ""), farbe: (farbe || "FFB060").trim() };
+      fenster[name] = { leds: parseLeds(leds || ""), farbe: (farbe || DEFAULT_COLOR).trim() };
     }
     if (!Object.keys(fenster).length) throw new Error("Bitte mindestens ein Fenster übernehmen.");
     next.haeuser = next.haeuser || {};
@@ -1029,8 +1208,7 @@ $("#h-add").onclick = () => {
     });
     if (updating) retargetRefs(next, editing.id, id);
     await api("/api/config", { method: "PUT", body: JSON.stringify(next) });
-    setEditing("haus", id);
-    await refresh();
+    await afterSave("haus");
   });
 };
 
@@ -1039,15 +1217,14 @@ $("#g-add").onclick = () => {
   runAction(updating ? "Gruppe gespeichert" : "Gruppe angelegt", async () => {
     const id = $("#g-id").value.trim();
     if (!id) throw new Error("Bitte eine ID vergeben.");
+    const mitglieder = selectedMembers("g-mem");
+    if (!mitglieder.length) throw new Error("Bitte mindestens ein Objekt wählen.");
     const next = await api("/api/config");
     next.gruppen = next.gruppen || {};
-    replaceKey(next.gruppen, updating ? editing.id : null, id, {
-      mitglieder: $("#g-mem").value.split(",").map((s) => s.trim()).filter(Boolean),
-    });
+    replaceKey(next.gruppen, updating ? editing.id : null, id, { mitglieder });
     if (updating) retargetRefs(next, editing.id, id);
     await api("/api/config", { method: "PUT", body: JSON.stringify(next) });
-    setEditing("gruppe", id);
-    await refresh();
+    await afterSave("gruppe");
   });
 };
 
@@ -1056,17 +1233,23 @@ $("#s-add").onclick = () => {
   runAction(updating ? "Sequenz gespeichert" : "Sequenz angelegt", async () => {
     const id = $("#s-id").value.trim();
     if (!id) throw new Error("Bitte eine ID vergeben.");
+    const gruppen = selectedMembers("s-grp");
+    if (!gruppen.length) throw new Error("Bitte mindestens eine Gruppe wählen.");
+    const minS = durationSeconds($("#s-d1").value, NaN);
+    const maxS = durationSeconds($("#s-d2").value, NaN);
+    if (!Number.isFinite(minS) || !Number.isFinite(maxS) || minS < 0 || maxS < 0) {
+      throw new Error("Pausen müssen Zahlen ab 0 Sekunden sein.");
+    }
     const next = await api("/api/config");
     next.sequenzen = next.sequenzen || {};
     replaceKey(next.sequenzen, updating ? editing.id : null, id, {
-      gruppen: $("#s-grp").value.split(",").map((s) => s.trim()).filter(Boolean),
+      gruppen,
       reihenfolge: $("#s-ord").value,
-      verzoegerung: [$("#s-d1").value, $("#s-d2").value],
+      verzoegerung: [durationToken(minS), durationToken(maxS)],
     });
     if (updating) retargetRefs(next, editing.id, id);
     await api("/api/config", { method: "PUT", body: JSON.stringify(next) });
-    setEditing("sequenz", id);
-    await refresh();
+    await afterSave("sequenz");
   });
 };
 
@@ -1104,8 +1287,7 @@ $("#sig-add").onclick = () => {
     replaceKey(next.signale, updating ? editing.id : null, id, { controller: $("#sig-ctrl").value, begriffe });
     if (updating) retargetRefs(next, editing.id, id);
     await api("/api/config", { method: "PUT", body: JSON.stringify(next) });
-    setEditing("signal", id);
-    await refresh();
+    await afterSave("signal");
   });
 };
 

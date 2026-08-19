@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>BiDiB2WLED</title>
-  <link rel="stylesheet" href="/static/style.css?v=8">
+  <link rel="stylesheet" href="/static/style.css?v=15">
 </head>
 <body>
   <header>
@@ -89,7 +89,7 @@
           <label>Farbe
             <span class="color-field">
               <span class="color-swatch" title="Farbe wählen"></span>
-              <input id="l-farbe" value="FFB060" placeholder="RRGGBB" size="8" spellcheck="false" autocomplete="off">
+              <input id="l-farbe" value="FFFFFF" placeholder="RRGGBB" size="8" spellcheck="false" autocomplete="off">
             </span>
           </label>
           <button id="l-add">Lampe speichern</button>
@@ -115,12 +115,12 @@
           <label>Farbe
             <span class="color-field">
               <span class="color-swatch" title="Farbe wählen"></span>
-              <input id="h-win-farbe" value="FFB060" placeholder="RRGGBB" size="8" spellcheck="false" autocomplete="off">
+              <input id="h-win-farbe" value="FFFFFF" placeholder="RRGGBB" size="8" spellcheck="false" autocomplete="off">
             </span>
           </label>
           <button type="button" id="h-win-add" class="secondary">Fenster übernehmen</button>
         </div>
-        <textarea id="h-fenster" rows="4" placeholder="wohnzimmer:18,19:FFB060"></textarea>
+        <textarea id="h-fenster" rows="4" placeholder="wohnzimmer:18,19:FFFFFF"></textarea>
         <div class="row">
           <button id="h-add">Haus speichern</button>
           <button type="button" id="h-cancel" class="secondary hidden">Abbrechen</button>
@@ -130,22 +130,25 @@
         <h2 id="g-title">Gruppe anlegen</h2>
         <div class="row wrap">
           <input id="g-id" placeholder="Gruppe hauptstrasse">
-          <input id="g-mem" placeholder="Mitglieder, kommagetrennt">
+          <label>Mitglieder (Strg für mehrere) <select id="g-mem" multiple size="6"></select></label>
           <button id="g-add">Gruppe speichern</button>
           <button type="button" id="g-cancel" class="secondary hidden">Abbrechen</button>
         </div>
       </article>
       <article id="art-sequenz">
         <h2 id="s-title">Sequenz anlegen</h2>
+        <p>Eine Sequenz schaltet die gewählten Gruppen nacheinander. Zwischen den Objekten wartet sie eine zufällige Pause zwischen Minimum und Maximum (in Sekunden). Beim Ausschalten läuft die Reihenfolge rückwärts.</p>
         <div class="row wrap">
           <input id="s-id" placeholder="Sequenz seq-nacht">
-          <input id="s-grp" placeholder="Gruppen-IDs">
-          <select id="s-ord">
-            <option value="zufaellig">zufällig</option>
-            <option value="definiert">definiert</option>
-          </select>
-          <input id="s-d1" value="2s" placeholder="min">
-          <input id="s-d2" value="8s" placeholder="max">
+          <label>Gruppen (Strg für mehrere) <select id="s-grp" multiple size="6"></select></label>
+          <label>Reihenfolge
+            <select id="s-ord">
+              <option value="zufaellig">zufällig</option>
+              <option value="definiert">definiert (Listenreihenfolge)</option>
+            </select>
+          </label>
+          <label>Pause min. (s) <input id="s-d1" type="number" min="0" step="1" value="2" title="Kürzeste Pause zwischen zwei Objekten"></label>
+          <label>Pause max. (s) <input id="s-d2" type="number" min="0" step="1" value="8" title="Längste Pause zwischen zwei Objekten"></label>
           <button id="s-add">Sequenz speichern</button>
           <button type="button" id="s-cancel" class="secondary hidden">Abbrechen</button>
         </div>
@@ -202,13 +205,13 @@
         <div class="sv-marker" id="cp-sv-marker"></div>
       </div>
     </div>
-    <label>HTML <input id="cp-hex" placeholder="#FFB060" spellcheck="false" autocomplete="off"></label>
+    <label>HTML <input id="cp-hex" placeholder="#FFFFFF" spellcheck="false" autocomplete="off"></label>
     <div class="color-picker-rgb">
       <label>R <input id="cp-r" type="number" min="0" max="255"></label>
       <label>G <input id="cp-g" type="number" min="0" max="255"></label>
       <label>B <input id="cp-b" type="number" min="0" max="255"></label>
     </div>
   </div>
-  <script src="/static/app.js?v=10"></script>
+  <script src="/static/app.js?v=18"></script>
 </body>
 </html>

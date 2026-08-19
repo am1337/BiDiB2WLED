@@ -633,18 +633,7 @@ class NetBidibAdapter:
         self.trusted = {item.lower() for item in self.net_cfg.trusted}
 
     def accessory_map(self) -> dict[int, str]:
-        configured = dict(self.net_cfg.accessories)
-        if configured:
-            return configured
-        mapping: dict[int, str] = {}
-        skip_windows = True
-        anum = 0
-        for obj_id in self.engine.config.all_object_ids():
-            if skip_windows and "." in obj_id and obj_id.split(".", 1)[0] in self.engine.config.haeuser:
-                continue
-            mapping[anum] = obj_id
-            anum += 1
-        return mapping
+        return self.engine.config.accessory_map()
 
     def trust(self, uid_hex: str) -> None:
         uid_hex = uid_hex.lower()
