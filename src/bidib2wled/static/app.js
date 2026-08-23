@@ -3,6 +3,8 @@ const DEFAULT_COLOR = "FFFFFF";
 let cfg = {};
 let status = {};
 let wizardOpened = false;
+const editing = { kind: null, id: null };
+let editingWindow = null;
 
 function isEditing() {
   if (!$("#color-picker").classList.contains("hidden")) return true;
@@ -276,6 +278,7 @@ const LED_GROUPS = [
   { ctrl: "l-ctrl", out: "l-out", led: "l-leds" },
   { ctrl: "h-ctrl", out: "h-out", led: "h-leds" },
   { ctrl: "sig-ctrl", out: "sig-out", led: "sig-leds" },
+  { ctrl: "sp-ctrl", out: "sp-out", led: "sp-leds" },
 ];
 
 function controllerByName(name) {
@@ -294,10 +297,53 @@ function fillOptions(el, options, current) {
     return;
   }
   el.innerHTML = options
-    .map((opt) => `<option value="${opt.value}">${opt.label}</option>`)
+    .map((opt) => {
+      const used = opt.used ? " opt-used" : "";
+      const title = opt.title ? ` title="${esc(opt.title)}"` : "";
+      return `<option value="${esc(opt.value)}" class="${used.trim()}"${title}>${esc(opt.label)}</option>`;
+    })
     .join("");
   const values = options.map((opt) => String(opt.value));
   el.value = values.includes(String(current)) ? String(current) : values[0];
+}
+
+function ledOwners(ctrlName, globalIndex) {
+  const leds = (status.usage && status.usage.leds && status.usage.leds[ctrlName]) || {};
+  return leds[String(globalIndex)] || [];
+}
+
+function objectOwners(objId) {
+  const objects = (status.usage && status.usage.objects) || {};
+  return objects[objId] || [];
+}
+
+function currentLedExclude() {
+  const ids = new Set();
+  if (!editing.kind || !editing.id) return ids;
+  if (editing.kind === "lampe" || editing.kind === "spezial" || editing.kind === "signal") {
+    ids.add(editing.id);
+    return ids;
+  }
+  if (editing.kind === "haus") {
+    ids.add(editing.id);
+    const house = (cfg.haeuser || {})[editing.id];
+    if (house) {
+      for (const windowId of Object.keys(house.fenster || {})) {
+        ids.add(`${editing.id}.${windowId}`);
+      }
+    }
+  }
+  return ids;
+}
+
+function usedMark(owners, exclude) {
+  const other = (owners || []).filter((id) => !exclude.has(id));
+  if (!other.length) return { used: false, suffix: "", title: "" };
+  return {
+    used: true,
+    suffix: "  · in Verwendung",
+    title: `Bereits verwendet von: ${other.join(", ")}`,
+  };
 }
 
 function fillOutputSelect(outId, ctrlName) {
@@ -320,9 +366,13 @@ function fillLedSelect(ledId, ctrlName, outId) {
     el.innerHTML = '<option value="">Keine LEDs</option>';
     return;
   }
+  const exclude = currentLedExclude();
   el.innerHTML = Array.from({ length: out.len }, (_, i) => {
     const global = out.start + i;
-    return `<option value="${i}">LED ${i + 1} (Nr. ${global})</option>`;
+    const mark = usedMark(ledOwners(ctrlName, global), exclude);
+    const cls = mark.used ? ' class="opt-used"' : "";
+    const title = mark.title ? ` title="${esc(mark.title)}"` : "";
+    return `<option value="${i}"${cls}${title}>LED ${i + 1} (Nr. ${global})${mark.suffix}</option>`;
   }).join("");
   if (el.multiple) {
     [...el.options].forEach((opt) => {
@@ -356,7 +406,7 @@ function syncLedDropdowns() {
 
 function fillCtrlSelects() {
   const names = (cfg.controller || []).map((c) => c.name).filter(Boolean);
-  for (const id of ["id-ctrl", "l-ctrl", "h-ctrl", "sig-ctrl"]) {
+  for (const id of ["id-ctrl", "l-ctrl", "h-ctrl", "sig-ctrl", "sp-ctrl"]) {
     const el = document.getElementById(id);
     if (!el) continue;
     const current = el.value;
@@ -368,6 +418,37 @@ function fillCtrlSelects() {
     el.value = names.includes(current) ? current : names[0];
   }
   syncLedDropdowns();
+  fillSpecialFx($("#sp-ctrl") && $("#sp-ctrl").value);
+}
+
+function fillNamedSelect(el, names, current, emptyLabel) {
+  if (!el) return;
+  if (!names.length) {
+    el.innerHTML = `<option value="">${esc(emptyLabel)}</option>`;
+    return;
+  }
+  fillOptions(
+    el,
+    names.map((name, i) => ({ value: i, label: `${i}: ${name}` })),
+    current
+  );
+}
+
+function fillSpecialFx(ctrlName) {
+  const ctrl = controllerByName(ctrlName);
+  const reachable = ctrl && ctrl.reachable;
+  fillNamedSelect(
+    $("#sp-fx"),
+    (ctrl && ctrl.effects) || [],
+    $("#sp-fx") && $("#sp-fx").value,
+    reachable ? "Keine Effekte gemeldet" : "Effekte nicht geladen"
+  );
+  fillNamedSelect(
+    $("#sp-pal"),
+    (ctrl && ctrl.palettes) || [],
+    $("#sp-pal") && $("#sp-pal").value,
+    reachable ? "Keine Paletten gemeldet" : "Paletten nicht geladen"
+  );
 }
 
 function groupMemberSections(excludeId) {
@@ -386,6 +467,7 @@ function groupMemberSections(excludeId) {
   }
   add("Fenster", windows);
   add("Signale", Object.keys(cfg.signale || {}));
+  add("Spezial", Object.keys(cfg.spezial || {}));
   add("Gruppen", Object.keys(cfg.gruppen || {}));
   add("Sequenzen", Object.keys(cfg.sequenzen || {}));
   return sections;
@@ -405,11 +487,17 @@ function fillGroupMemberSelect(selected) {
     return;
   }
   el.disabled = false;
+  const usedExclude = new Set(exclude ? [exclude] : []);
   el.innerHTML = sections
     .map(
       (section) =>
         `<optgroup label="${esc(section.label)}">${section.items
-          .map((id) => `<option value="${esc(id)}">${esc(id)}</option>`)
+          .map((id) => {
+            const mark = usedMark(objectOwners(id), usedExclude);
+            const cls = mark.used ? ' class="opt-used"' : "";
+            const title = mark.title ? ` title="${esc(mark.title)}"` : "";
+            return `<option value="${esc(id)}"${cls}${title}>${esc(id)}${mark.suffix}</option>`;
+          })
           .join("")}</optgroup>`
     )
     .join("");
@@ -418,7 +506,7 @@ function fillGroupMemberSelect(selected) {
   });
 }
 
-function fillMultiSelect(el, items, selected, emptyLabel) {
+function fillMultiSelect(el, items, selected, emptyLabel, excludeIds) {
   if (!el) return;
   const keep = selected
     ? new Set(selected.map(String))
@@ -429,14 +517,23 @@ function fillMultiSelect(el, items, selected, emptyLabel) {
     return;
   }
   el.disabled = false;
-  el.innerHTML = items.map((id) => `<option value="${esc(id)}">${esc(id)}</option>`).join("");
+  const usedExclude = new Set(excludeIds || []);
+  el.innerHTML = items
+    .map((id) => {
+      const mark = usedMark(objectOwners(id), usedExclude);
+      const cls = mark.used ? ' class="opt-used"' : "";
+      const title = mark.title ? ` title="${esc(mark.title)}"` : "";
+      return `<option value="${esc(id)}"${cls}${title}>${esc(id)}${mark.suffix}</option>`;
+    })
+    .join("");
   [...el.options].forEach((opt) => {
     opt.selected = keep.has(opt.value);
   });
 }
 
 function fillSequenceGroupSelect(selected) {
-  fillMultiSelect($("#s-grp"), Object.keys(cfg.gruppen || {}), selected, "Keine Gruppen angelegt");
+  const exclude = editing.kind === "sequenz" && editing.id ? [editing.id] : [];
+  fillMultiSelect($("#s-grp"), Object.keys(cfg.gruppen || {}), selected, "Keine Gruppen angelegt", exclude);
 }
 
 function selectedMembers(selectId) {
@@ -452,6 +549,7 @@ for (const group of LED_GROUPS) {
       fillOutputSelect(group.out, ctrl.value);
       const next = document.getElementById(group.out);
       fillLedSelect(group.led, ctrl.value, next && next.value);
+      if (group.ctrl === "sp-ctrl") fillSpecialFx(ctrl.value);
     });
   }
   if (out) {
@@ -496,10 +594,14 @@ function renderStatus() {
         ? `<a href="${href}" target="_blank" rel="noopener">${c.ip}</a>`
         : "keine IP";
       const outs = (c.outputs || []).map((o) => o.label).join(" · ");
+      const warns = (c.warnings || [])
+        .map((w) => `<li>${esc(w)}</li>`)
+        .join("");
       return `<div><strong>${c.name}</strong> ${ip} · ${c.leds || "?"} LEDs ·
       <span class="${c.reachable ? "ok" : "bad"}">${c.reachable ? "erreichbar" : "nicht erreichbar"}</span>
       ${c.mac ? `<span class="chip">${c.mac}</span>` : ""}
-      ${outs ? `<div class="sub">${outs}</div>` : ""}</div>`;
+      ${outs ? `<div class="sub">${outs}</div>` : ""}
+      ${warns ? `<ul class="warn">${warns}</ul>` : ""}</div>`;
     })
     .join("") || "<p>Noch kein Controller übernommen.</p>";
   renderObjects();
@@ -811,10 +913,8 @@ const EDIT_META = {
   gruppe: { title: "g-title", create: "Gruppe anlegen", edit: "Gruppe bearbeiten", art: "art-gruppe", cancel: "g-cancel" },
   sequenz: { title: "s-title", create: "Sequenz anlegen", edit: "Sequenz bearbeiten", art: "art-sequenz", cancel: "s-cancel" },
   signal: { title: "sig-title", create: "Signal anlegen", edit: "Signal bearbeiten", art: "art-signal", cancel: "sig-cancel" },
+  spezial: { title: "sp-title", create: "Spezial anlegen", edit: "Spezial bearbeiten", art: "art-spezial", cancel: "sp-cancel" },
 };
-
-const editing = { kind: null, id: null };
-let editingWindow = null;
 
 function setEditing(kind, id) {
   editing.kind = kind || null;
@@ -891,6 +991,9 @@ function removeObjectFromConfig(cfg, id) {
   } else if (cfg.signale && cfg.signale[id]) {
     delete cfg.signale[id];
     removed.push(id);
+  } else if (cfg.spezial && cfg.spezial[id]) {
+    delete cfg.spezial[id];
+    removed.push(id);
   } else if (id.includes(".")) {
     const houseId = id.split(".")[0];
     const win = id.slice(houseId.length + 1);
@@ -944,19 +1047,20 @@ function begriffeToText(begriffe) {
 function loadLamp(id, lamp) {
   $("#l-id").value = id;
   $("#l-ctrl").value = lamp.controller;
+  setEditing("lampe", id);
   fillOutputSelect("l-out", lamp.controller);
   const located = locateLeds(lamp.controller, lamp.leds || []);
   $("#l-out").value = located.outId;
   fillLedSelect("l-leds", lamp.controller, located.outId);
   selectLocals("l-leds", located.locals);
   setColorInput("l-farbe", lamp.farbe || DEFAULT_COLOR);
-  setEditing("lampe", id);
   $("#art-lampe").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function loadHouse(id, house, windowId) {
   $("#h-id").value = id;
   $("#h-ctrl").value = house.controller;
+  setEditing("haus", id);
   fillOutputSelect("h-out", house.controller);
   $("#h-mode").value = house.einschalten || "zufaellig";
   $("#h-fenster").value = fensterToText(house.fenster);
@@ -973,7 +1077,6 @@ function loadHouse(id, house, windowId) {
     fillLedSelect("h-leds", house.controller, $("#h-out").value);
     setColorInput("h-win-farbe", DEFAULT_COLOR);
   }
-  setEditing("haus", id);
   $("#art-haus").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -1000,11 +1103,29 @@ function loadSequence(id, seq) {
 function loadSignal(id, signal) {
   $("#sig-id").value = id;
   $("#sig-ctrl").value = signal.controller;
+  setEditing("signal", id);
   fillOutputSelect("sig-out", signal.controller);
   fillLedSelect("sig-leds", signal.controller, $("#sig-out").value);
   $("#sig-asp").value = begriffeToText(signal.begriffe);
-  setEditing("signal", id);
   $("#art-signal").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function loadSpecial(id, spec) {
+  $("#sp-id").value = id;
+  $("#sp-ctrl").value = spec.controller;
+  setEditing("spezial", id);
+  fillOutputSelect("sp-out", spec.controller);
+  fillSpecialFx(spec.controller);
+  const located = locateLeds(spec.controller, spec.leds || []);
+  $("#sp-out").value = located.outId;
+  fillLedSelect("sp-leds", spec.controller, located.outId);
+  selectLocals("sp-leds", located.locals);
+  $("#sp-fx").value = String(spec.effekt ?? 0);
+  $("#sp-pal").value = String(spec.palette ?? 0);
+  $("#sp-sx").value = String(spec.geschwindigkeit ?? 128);
+  $("#sp-ix").value = String(spec.intensitaet ?? 128);
+  setColorInput("sp-farbe", spec.farbe || DEFAULT_COLOR);
+  $("#art-spezial").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function startEdit(id) {
@@ -1023,6 +1144,7 @@ function startEdit(id) {
   if (kind === "gruppe" && cfg.gruppen && cfg.gruppen[id]) return loadGroup(id, cfg.gruppen[id]);
   if (kind === "sequenz" && cfg.sequenzen && cfg.sequenzen[id]) return loadSequence(id, cfg.sequenzen[id]);
   if (kind === "signal" && cfg.signale && cfg.signale[id]) return loadSignal(id, cfg.signale[id]);
+  if (kind === "spezial" && cfg.spezial && cfg.spezial[id]) return loadSpecial(id, cfg.spezial[id]);
   notify("Objekt konnte nicht geladen werden.", false);
 }
 
@@ -1051,6 +1173,13 @@ function cancelEdit(kind) {
     setColorInput("sig-farbe", "FF0000");
     const aspN = $("#sig-asp-n");
     if (aspN) aspN.value = "0";
+  } else if (kind === "spezial") {
+    $("#sp-id").value = "";
+    $("#sp-sx").value = "128";
+    $("#sp-ix").value = "128";
+    setColorInput("sp-farbe", DEFAULT_COLOR);
+    if ($("#sp-fx")) $("#sp-fx").selectedIndex = 0;
+    if ($("#sp-pal")) $("#sp-pal").selectedIndex = 0;
   }
   setEditing(null, null);
 }
@@ -1140,6 +1269,7 @@ $("#h-cancel").onclick = () => cancelEdit("haus");
 $("#g-cancel").onclick = () => cancelEdit("gruppe");
 $("#s-cancel").onclick = () => cancelEdit("sequenz");
 $("#sig-cancel").onclick = () => cancelEdit("signal");
+$("#sp-cancel").onclick = () => cancelEdit("spezial");
 
 $("#l-add").onclick = () => {
   const updating = editing.kind === "lampe" && editing.id;
@@ -1288,6 +1418,37 @@ $("#sig-add").onclick = () => {
     if (updating) retargetRefs(next, editing.id, id);
     await api("/api/config", { method: "PUT", body: JSON.stringify(next) });
     await afterSave("signal");
+  });
+};
+
+$("#sp-add").onclick = () => {
+  const updating = editing.kind === "spezial" && editing.id;
+  runAction(updating ? "Spezial gespeichert" : "Spezial angelegt", async () => {
+    const id = $("#sp-id").value.trim();
+    const leds = toGlobals($("#sp-ctrl").value, $("#sp-out").value, selectedLocals("sp-leds"));
+    if (!id) throw new Error("Bitte eine ID vergeben.");
+    if (!leds.length) throw new Error("Bitte mindestens eine LED wählen.");
+    const fx = Number($("#sp-fx").value);
+    if (!Number.isInteger(fx) || fx < 0) throw new Error("Bitte einen Effekt wählen.");
+    const pal = Number($("#sp-pal").value);
+    const sx = Number($("#sp-sx").value);
+    const ix = Number($("#sp-ix").value);
+    if (!Number.isInteger(sx) || sx < 0 || sx > 255) throw new Error("Geschwindigkeit muss 0–255 sein.");
+    if (!Number.isInteger(ix) || ix < 0 || ix > 255) throw new Error("Intensität muss 0–255 sein.");
+    const next = await api("/api/config");
+    next.spezial = next.spezial || {};
+    replaceKey(next.spezial, updating ? editing.id : null, id, {
+      controller: $("#sp-ctrl").value,
+      leds,
+      effekt: fx,
+      palette: Number.isInteger(pal) && pal >= 0 ? pal : 0,
+      geschwindigkeit: sx,
+      intensitaet: ix,
+      farbe: parseHex($("#sp-farbe").value) || DEFAULT_COLOR,
+    });
+    if (updating) retargetRefs(next, editing.id, id);
+    await api("/api/config", { method: "PUT", body: JSON.stringify(next) });
+    await afterSave("spezial");
   });
 };
 

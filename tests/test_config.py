@@ -50,6 +50,15 @@ signale:
     begriffe:
       0: { name: Halt, leds: { 5: "FF0000" } }
       1: { name: Fahrt, leds: { 6: "00FF00" } }
+spezial:
+  kamin:
+    controller: dorf
+    leds: [8, 9]
+    effekt: 10
+    palette: 0
+    geschwindigkeit: 90
+    intensitaet: 180
+    farbe: "FF6A00"
 """
     path = tmp_path / "c.yaml"
     path.write_text(text, encoding="utf-8")
@@ -60,7 +69,14 @@ signale:
     assert cfg.object_kind("haus-a") == "haus"
     assert cfg.object_kind("haus-a.wz") == "fenster"
     assert cfg.object_kind("sig") == "signal"
+    assert cfg.object_kind("kamin") == "spezial"
     assert cfg.aspect_count("sig") == 2
+    assert "kamin" in cfg.switchable_object_ids()
+    usage = cfg.led_usage()
+    assert usage["dorf"]["0"] == ["laterne-1"]
+    assert "kamin" in usage["dorf"]["8"]
+    assert cfg.object_usage()["laterne-1"] == ["strasse"]
+    assert cfg.object_usage()["strasse"] == ["seq-nacht"]
 
 
 def test_accessory_map_keeps_fixed_and_fills_new():
@@ -120,6 +136,21 @@ def test_host_setup_info_rocrail_uses_plus_one():
     assert "Adresse 3 (Adresse+1)" in signal[0]["text"]
     window = host_setup_info("fenster", None)
     assert "Haus" in window[0]["text"]
+
+
+def test_adapter_client_replaces_rocrail():
+    cfg = AppConfig.model_validate(
+        {
+            "adapter": {
+                "rocrail": {"aktiv": False, "host": "10.0.0.2", "port": 8051, "id-praefix": "wled-"},
+            }
+        }
+    )
+    assert not hasattr(cfg.adapter, "rocrail")
+    assert cfg.adapter.client.host == "10.0.0.2"
+    dumped = cfg.model_dump(by_alias=True)
+    assert "client" in dumped["adapter"]
+    assert "rocrail" not in dumped["adapter"]
 
 
 def test_unknown_controller_rejected():

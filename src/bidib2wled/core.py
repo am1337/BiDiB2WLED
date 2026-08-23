@@ -9,7 +9,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from bidib2wled.config import AppConfig
-from bidib2wled.wled import WledPool, rgb_from_hex
+from bidib2wled.wled import ActiveEffect, WledPool, rgb_from_hex
 
 log = logging.getLogger(__name__)
 
@@ -79,6 +79,8 @@ class Engine:
                 await self._switch_sequence(object_id, aspect)
             elif object_id in self.config.signale:
                 await self._switch_signal(object_id, aspect)
+            elif object_id in self.config.spezial:
+                await self._switch_special(object_id, aspect)
             elif "." in object_id:
                 await self._switch_window(object_id, aspect)
             else:
@@ -201,6 +203,30 @@ class Engine:
         for idx, color in begriff.leds.items():
             updates[idx] = rgb_from_hex(color, 255)
         await self._set_leds(signal.controller, updates)
+
+    async def _switch_special(self, object_id: str, aspect: int) -> None:
+        spec = self.config.spezial[object_id]
+        device = self.pool.get(spec.controller)
+        if device is None:
+            raise KeyError(f"Controller {spec.controller} nicht verbunden")
+        if aspect:
+            bri = spec.helligkeit if spec.helligkeit is not None else 255
+            await device.apply_effect(
+                ActiveEffect(
+                    object_id=object_id,
+                    leds=tuple(spec.leds),
+                    fx=spec.effekt,
+                    pal=spec.palette,
+                    sx=spec.geschwindigkeit,
+                    ix=spec.intensitaet,
+                    color=rgb_from_hex(spec.farbe, bri),
+                    bri=bri,
+                )
+            )
+        else:
+            await device.clear_effect(object_id)
+            await self._set_leds(spec.controller, {idx: (0, 0, 0) for idx in spec.leds})
+        self.state_of(object_id).aspect = 1 if aspect else 0
 
     async def _set_leds(self, controller: str, updates: dict[int, tuple[int, int, int]]) -> None:
         device = self.pool.get(controller)

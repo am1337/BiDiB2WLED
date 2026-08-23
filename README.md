@@ -15,8 +15,13 @@ Läuft unter **Linux**, **Windows** und **macOS** (Python 3.11 oder neuer).
 | **Gruppe** | mehrere Lampen/Häuser (z. B. eine Straße) | alle Mitglieder gemeinsam |
 | **Sequenz** | gestaffeltes Ein- oder Ausschalten mit Pausen | an = Reihenfolge „an“, aus = umgekehrt |
 | **Signal** | mehrere Begriffe (Halt, Fahrt, …), je Begriff eigene LEDs/Farben | Begriff (Aspekt) 0, 1, 2, … |
+| **Spezial** | eingebauter WLED-Effekt (Feuer, Kerze, …) auf den gewählten LEDs | aus / an |
 
 Zusätzlich: WLED-Geräte im Netz finden, LEDs am Modell identifizieren (blinken lassen), alles in der Weboberfläche anlegen und testen, dauerhaft als Dienst betreiben.
+
+![Statusseite](status.png)
+
+![Objektkonfiguration](objects.png)
 
 ## Voraussetzungen
 
@@ -126,9 +131,9 @@ Auf jedem Controller (WLED-Weboberfläche oder App), **einmalig**:
 - WLAN, LED-Typ, GPIO, LED-Anzahl, Farbreihenfolge, Strombegrenzung
 - mDNS-Name (z. B. `wled-dorf`)
 - Boot-Preset **aus** / dunkel, damit nach Stromausfall nichts unkontrolliert leuchtet
-- Sync zwischen Controllern **aus** – die Bridge orchestriert selbst
+- Sync zwischen Controllern **aus** – die Bridge orchestriert selbst. Ist Sync (oder E1.31/DMX) trotzdem aktiv, erscheint das unter **Status** am Controller.
 
-**Nicht** in WLED anlegen: Segmente je Haus oder Fenster. Die Bedeutung der Pixel (welche LED welches Zimmer ist) liegt nur in BiDiB2WLED.
+**Nicht** in WLED anlegen: Segmente je Haus oder Fenster. Die Bedeutung der Pixel (welche LED welches Zimmer ist) liegt nur in BiDiB2WLED. Spezial-Effekte legt die Bridge selbst als Overlay-Segmente an.
 
 ## Ersteinrichtung
 
@@ -136,7 +141,7 @@ Auf jedem Controller (WLED-Weboberfläche oder App), **einmalig**:
 2. Unter **Einrichtung** den Knotennamen und den netBiDiB-Port prüfen. **Server** ist der Normalfall: Rocrail verbindet sich zur Bridge (Standardport **62875**).
 3. Gefundene WLED-Geräte benennen und **übernehmen** – oder IP von Hand eintragen.
 4. Unter **Status** die IP eines Controllers anklicken, um dessen WLED-Seite zu öffnen. Unter **Einrichtung** Controller, Ausgang und LED wählen und **identifizieren** („welche Laterne blinkt?“).
-5. Unter **Objekte** Lampen, Häuser, Gruppen, Sequenzen und Signale anlegen. Speichern gibt eine Rückmeldung; Farben lassen sich über Farbrad, HTML-Wert oder RGB wählen.
+5. Unter **Objekte** Lampen, Häuser, Gruppen, Sequenzen, Signale und Spezial-Effekte anlegen. Speichern gibt eine Rückmeldung; Farben lassen sich über Farbrad, HTML-Wert oder RGB wählen. Bereits vergebene LEDs und Objekte sind in den Auswahllisten markiert.
 6. Unter **Status → Verfügbare Objekte** testen (Schalter bzw. Signalbegriff), bei Bedarf **Ändern** oder **Löschen**.
 
 Die Datei `config.yaml` ist das einzige Speicherformat. Die Oberfläche schreibt sie. Von Hand editieren geht ebenfalls; danach in der Oberfläche **Von Disk neu laden** oder einfach speichern – der Dienst prüft die Datei alle 2 Sekunden.
@@ -225,7 +230,7 @@ adapter:
       1: Kirche
 ```
 
-### 5. Ausgang in Rocrail anlegen (Lampe, Haus, Gruppe, Sequenz)
+### 5. Ausgang in Rocrail anlegen (Lampe, Haus, Gruppe, Sequenz, Spezial)
 
 Voraussetzung: Unter Status **Angemeldet: ja**. Automatikmodus in Rocview aus.
 
@@ -259,6 +264,7 @@ Was der Klick bewirkt:
 
 - **Lampe:** LEDs an oder aus
 - **Haus:** Fenster nach dem in der Bridge eingestellten Verhalten
+- **Spezial:** WLED-Effekt an oder aus (kein Pixel-für-Pixel)
 - **Gruppe:** alle Mitglieder
 - **Sequenz:** an = gestaffelt ein, aus = gestaffelt aus; ein erneuter Befehl bricht eine laufende Sequenz ab
 
@@ -349,9 +355,19 @@ signale:
     begriffe:
       0: { name: Halt, leds: { 12: "FF0000" } }
       2: { name: Fahrt, leds: { 14: "00FF00" } }
+
+spezial:
+  kamin-feuer:
+    controller: dorf
+    leds: [10, 11, 12]
+    effekt: 10
+    palette: 0
+    geschwindigkeit: 128
+    intensitaet: 128
+    farbe: "FF6A00"
 ```
 
-Farben sind `RRGGBB` ohne `#`. LED-Indizes sind global auf dem Controller (Ausgang 1 beginnt bei 0).
+Farben sind `RRGGBB` ohne `#`. LED-Indizes sind global auf dem Controller (Ausgang 1 beginnt bei 0). Spezial-Objekte nutzen die WLED-Effekte des Controllers (`effekt` / `palette` sind die Nummern aus der Weboberfläche).
 
 ## Ports
 

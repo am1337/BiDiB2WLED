@@ -153,6 +153,18 @@ td, th { text-align: left; padding: 0.35rem 0.4rem; border-bottom: 1px solid var
 code { color: var(--accent); }
 a { color: var(--accent); }
 select[multiple] { min-width: 9rem; }
+option.opt-used {
+  color: #8b9098;
+  background: #1a1c21;
+  font-style: italic;
+}
+#controllers .warn {
+  color: var(--accent);
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+}
+#controllers .warn li { margin: 0.12rem 0; }
 
 .toast {
   position: fixed;

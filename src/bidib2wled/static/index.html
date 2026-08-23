@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>BiDiB2WLED</title>
-  <link rel="stylesheet" href="/static/style.css?v=15">
+  <link rel="stylesheet" href="/static/style.css?v=16">
 </head>
 <body>
   <header>
     <h1>BiDiB2WLED</h1>
-    <p class="sub" id="subtitle">Stufe 1 – virtueller BiDiB-Knoten für WLED</p>
+    <p class="sub" id="subtitle">Virtueller BiDiB-Knoten für WLED</p>
   </header>
 
   <nav>
@@ -179,6 +179,30 @@
           <button type="button" id="sig-cancel" class="secondary hidden">Abbrechen</button>
         </div>
       </article>
+      <article id="art-spezial">
+        <h2 id="sp-title">Spezial anlegen</h2>
+        <p>WLED-Effekt auf den gewählten LEDs. Zusammenhängende LEDs bilden ein Segment. Steuerung schaltet nur ein und aus. Bereits verwendete LEDs sind in den Listen markiert.</p>
+        <div class="row wrap">
+          <input id="sp-id" placeholder="ID kamin-feuer">
+          <label>Controller <select id="sp-ctrl"></select></label>
+          <label>Ausgang <select id="sp-out"></select></label>
+          <label>LEDs (Strg für mehrere) <select id="sp-leds" multiple size="6"></select></label>
+        </div>
+        <div class="row wrap">
+          <label>Effekt <select id="sp-fx"></select></label>
+          <label>Palette <select id="sp-pal"></select></label>
+          <label>Geschwindigkeit <input id="sp-sx" type="number" min="0" max="255" step="1" value="128"></label>
+          <label>Intensität <input id="sp-ix" type="number" min="0" max="255" step="1" value="128"></label>
+          <label>Farbe
+            <span class="color-field">
+              <span class="color-swatch" title="Farbe wählen"></span>
+              <input id="sp-farbe" value="FFFFFF" placeholder="RRGGBB" size="8" spellcheck="false" autocomplete="off">
+            </span>
+          </label>
+          <button id="sp-add">Spezial speichern</button>
+          <button type="button" id="sp-cancel" class="secondary hidden">Abbrechen</button>
+        </div>
+      </article>
     </section>
 
     <section id="tab-config" class="hidden">
@@ -212,6 +236,6 @@
       <label>B <input id="cp-b" type="number" min="0" max="255"></label>
     </div>
   </div>
-  <script src="/static/app.js?v=18"></script>
+  <script src="/static/app.js?v=19"></script>
 </body>
 </html>

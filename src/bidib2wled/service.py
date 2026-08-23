@@ -69,6 +69,9 @@ class Service:
                     "outputs": outputs,
                     "reachable": info.reachable if info else False,
                     "simulate": self.simulate,
+                    "effects": list(info.effects) if info else [],
+                    "palettes": list(info.palettes) if info else [],
+                    "warnings": list(info.warnings) if info else [],
                 }
             )
         kind_labels = {
@@ -78,6 +81,7 @@ class Service:
             "gruppe": "Gruppe",
             "sequenz": "Sequenz",
             "signal": "Signal",
+            "spezial": "Spezial",
         }
         acc_map = self.bidib.accessory_map()
         acc_rev = {obj: anum for anum, obj in acc_map.items()}
@@ -143,6 +147,10 @@ class Service:
             },
             "controllers": bound,
             "objects": objects,
+            "usage": {
+                "leds": self.config.led_usage(),
+                "objects": self.config.object_usage(),
+            },
         }
 
     def unbound_controllers(self):
@@ -202,6 +210,9 @@ class Service:
         leds = (found.led_count if found else None) or ctrl.leds or 0
         if not ip:
             log.warning("Controller %s: keine IP (mDNS/Fallback)", ctrl.name)
+            existing = self.pool.get(ctrl.name)
+            if existing:
+                existing.info.reachable = False
             return
         device = self.pool.bind(
             ctrl.name,
@@ -215,6 +226,7 @@ class Service:
         try:
             await device.fetch_info()
         except Exception as exc:
+            device.info.reachable = False
             log.warning("Controller %s Info: %s", ctrl.name, exc)
         changed = False
         if device.info.mac and ctrl.mac != device.info.mac:

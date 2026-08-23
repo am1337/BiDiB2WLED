@@ -34,6 +34,17 @@ def engine():
                     },
                 }
             },
+            "spezial": {
+                "kamin": {
+                    "controller": "dorf",
+                    "leds": [8, 9],
+                    "effekt": 10,
+                    "palette": 2,
+                    "geschwindigkeit": 90,
+                    "intensitaet": 180,
+                    "farbe": "FF6A00",
+                }
+            },
         }
     )
     eng = Engine(pool)
@@ -79,3 +90,22 @@ async def test_sequence(engine):
     await engine.switch("seq", 0)
     assert pix[0] == (0, 0, 0)
     assert pix[2] == (0, 0, 0)
+
+
+@pytest.mark.asyncio
+async def test_special_on_off(engine):
+    device = engine.pool.get("dorf")
+    await engine.switch("kamin", 1)
+    assert "kamin" in device.active_effects
+    effect = device.active_effects["kamin"]
+    assert effect.fx == 10
+    assert effect.pal == 2
+    assert effect.sx == 90
+    overlay = [seg for seg in device.state_body()["seg"] if seg.get("frz") is False]
+    assert overlay and overlay[0]["fx"] == 10
+    await engine.switch("kamin", 0)
+    assert "kamin" not in device.active_effects
+    assert device.pixels[8] == (0, 0, 0)
+    assert device.pixels[9] == (0, 0, 0)
+    assert device.posted_overlay_ids == []
+    assert all(seg.get("frz") is not False for seg in device.state_body()["seg"])

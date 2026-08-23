@@ -11,14 +11,68 @@ import aiohttp
 from bidib2wled.config import normalize_mac
 
 __all__ = [
+    "ActiveEffect",
     "LedOutput",
     "WledDevice",
     "WledInfo",
     "WledPool",
+    "contiguous_ranges",
     "hex_from_rgb",
     "normalize_mac",
     "outputs_from_cfg",
     "rgb_from_hex",
+    "warnings_from_cfg",
+]
+
+SIMULATED_EFFECTS = [
+    "Solid",
+    "Blink",
+    "Breathe",
+    "Wipe",
+    "Fade",
+    "Scan",
+    "Theater",
+    "Rainbow",
+    "Rainbow Cycle",
+    "Chase",
+    "Fire 2012",
+    "Twinkle",
+    "Colortwinkle",
+    "Lava",
+    "Meteor",
+    "Candle",
+    "Fireworks",
+    "Rain",
+    "Noise Pal",
+    "Dynamic",
+    "Colorwaves",
+    "Pride 2015",
+    "Heartbeat",
+    "Pacifica",
+    "Ripple",
+    "TV Simulator",
+    "Aurora",
+]
+SIMULATED_PALETTES = [
+    "Default",
+    "Random Cycle",
+    "Primary Color",
+    "Based on Primary",
+    "Set Colors",
+    "Party",
+    "Cloud",
+    "Lava",
+    "Ocean",
+    "Forest",
+    "Rainbow",
+    "Rainbow Bands",
+    "Sunset",
+    "Rivendell",
+    "Breeze",
+    "Red & Blue",
+    "Analogous",
+    "Splash",
+    "Pastel",
 ]
 
 log = logging.getLogger(__name__)
@@ -48,6 +102,18 @@ class LedOutput:
 
 
 @dataclass
+class ActiveEffect:
+    object_id: str
+    leds: tuple[int, ...]
+    fx: int
+    pal: int = 0
+    sx: int = 128
+    ix: int = 128
+    color: tuple[int, int, int] = (255, 255, 255)
+    bri: int = 255
+
+
+@dataclass
 class WledInfo:
     name: str
     mac: str
@@ -57,8 +123,11 @@ class WledInfo:
     version: str = ""
     mdns: str | None = None
     max_segments: int = 16
-    reachable: bool = True
+    reachable: bool = False
     outputs: list[LedOutput] = field(default_factory=list)
+    effects: list[str] = field(default_factory=list)
+    palettes: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def url(self) -> str:
@@ -96,12 +165,56 @@ def outputs_from_cfg(cfg: dict, led_count: int = 0) -> list[LedOutput]:
     return [LedOutput(0, 0, led_count or 1)]
 
 
+def _truthy(value) -> bool:
+    return value is True or value == 1 or str(value).lower() == "true"
+
+
+def warnings_from_cfg(cfg: dict) -> list[str]:
+    """Unpassende WLED-Einstellungen, die die Bridge überschreiben können."""
+    warnings: list[str] = []
+    iface = cfg.get("if") or {}
+    sync = iface.get("sync") if isinstance(iface.get("sync"), dict) else cfg.get("sync")
+    if not isinstance(sync, dict):
+        sync = {}
+    recv = sync.get("recv") if isinstance(sync.get("recv"), dict) else {}
+    send = sync.get("send") if isinstance(sync.get("send"), dict) else {}
+    if _truthy(recv.get("en")):
+        warnings.append("UDP-Sync-Empfang ist aktiv. Andere WLED-Geräte können die LEDs überschreiben.")
+    if _truthy(send.get("en")):
+        warnings.append("UDP-Sync-Senden ist aktiv. Dieser Controller steuert andere Geräte mit.")
+    live = iface.get("live") if isinstance(iface.get("live"), dict) else {}
+    dmx = live.get("dmx") if isinstance(live.get("dmx"), dict) else {}
+    mode = dmx.get("mode")
+    if mode not in (None, 0, "0", False):
+        warnings.append("E1.31/DMX-Empfang ist aktiv. Externe Quellen können die LEDs überschreiben.")
+    return warnings
+
+
+def contiguous_ranges(leds: list[int] | tuple[int, ...]) -> list[tuple[int, int]]:
+    """Sortierte LED-Indizes → halboffene Bereiche (start, stop) für WLED-Segmente."""
+    ordered = sorted({int(led) for led in leds})
+    if not ordered:
+        return []
+    ranges: list[tuple[int, int]] = []
+    start = prev = ordered[0]
+    for led in ordered[1:]:
+        if led == prev + 1:
+            prev = led
+            continue
+        ranges.append((start, prev + 1))
+        start = prev = led
+    ranges.append((start, prev + 1))
+    return ranges
+
+
 @dataclass
 class WledDevice:
     info: WledInfo
     pixels: list[tuple[int, int, int]] = field(default_factory=list)
     session: aiohttp.ClientSession | None = None
     simulate: bool = False
+    active_effects: dict[str, ActiveEffect] = field(default_factory=dict)
+    posted_overlay_ids: list[int] = field(default_factory=list)
 
     def ensure_size(self, count: int) -> None:
         if count <= 0:
@@ -118,26 +231,35 @@ class WledDevice:
     async def fetch_info(self) -> WledInfo:
         if self.simulate:
             self.info.reachable = True
+            if not self.info.effects:
+                self.info.effects = list(SIMULATED_EFFECTS)
+            if not self.info.palettes:
+                self.info.palettes = list(SIMULATED_PALETTES)
             await self._fetch_outputs()
             self.ensure_size(self.info.led_count or 1)
             return self.info
         assert self.session is not None
         url = f"{self.base_url}/json/info"
-        async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=4)) as response:
-            response.raise_for_status()
-            data = await response.json()
-        leds = data.get("leds") or {}
-        count = int(leds.get("count") or 0)
-        mac = normalize_mac(str(data.get("mac") or self.info.mac))
-        self.info.mac = mac
-        self.info.name = str(data.get("name") or self.info.name)
-        self.info.led_count = count
-        self.info.version = str(data.get("ver") or "")
-        self.info.max_segments = int(leds.get("maxseg") or 16)
-        self.info.reachable = True
-        await self._fetch_outputs()
-        self.ensure_size(count or len(self.pixels) or 1)
-        return self.info
+        try:
+            async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=4)) as response:
+                response.raise_for_status()
+                data = await response.json()
+            leds = data.get("leds") or {}
+            count = int(leds.get("count") or 0)
+            mac = normalize_mac(str(data.get("mac") or self.info.mac))
+            self.info.mac = mac
+            self.info.name = str(data.get("name") or self.info.name)
+            self.info.led_count = count
+            self.info.version = str(data.get("ver") or "")
+            self.info.max_segments = int(leds.get("maxseg") or 16)
+            self.info.reachable = True
+            await self._fetch_outputs()
+            await self._fetch_effects()
+            self.ensure_size(count or len(self.pixels) or 1)
+            return self.info
+        except Exception:
+            self.info.reachable = False
+            raise
 
     async def _fetch_outputs(self) -> None:
         if self.simulate:
@@ -161,6 +283,29 @@ class WledDevice:
             self._fallback_outputs()
             return
         self.info.outputs = outputs_from_cfg(cfg, self.info.led_count)
+        self.info.warnings = warnings_from_cfg(cfg)
+
+    async def _fetch_effects(self) -> None:
+        if self.simulate:
+            return
+        assert self.session is not None
+        timeout = aiohttp.ClientTimeout(total=4)
+        try:
+            async with self.session.get(f"{self.base_url}/json/eff", timeout=timeout) as response:
+                response.raise_for_status()
+                data = await response.json(content_type=None)
+            if isinstance(data, list):
+                self.info.effects = [str(name) for name in data]
+        except Exception as exc:
+            log.info("WLED %s: Effekte nicht lesbar (%s)", self.info.ip, exc)
+        try:
+            async with self.session.get(f"{self.base_url}/json/pal", timeout=timeout) as response:
+                response.raise_for_status()
+                data = await response.json(content_type=None)
+            if isinstance(data, list):
+                self.info.palettes = [str(name) for name in data]
+        except Exception as exc:
+            log.info("WLED %s: Paletten nicht lesbar (%s)", self.info.ip, exc)
 
     def _fallback_outputs(self) -> None:
         total = self.info.led_count or len(self.pixels) or 1
@@ -189,12 +334,28 @@ class WledDevice:
                 self.pixels[idx] = color
         if self.simulate:
             log.info("simulate %s pixels %s", self.info.name, updates)
+            self.state_body(updates)
             return
         await self._post_state(self.state_body(updates))
 
-    def state_body(self, updates: dict[int, tuple[int, int, int]]) -> dict:
-        max_idx = max(updates)
-        total = max(max_idx + 1, self.info.led_count, len(self.pixels), 1)
+    async def apply_effect(self, effect: ActiveEffect) -> None:
+        self.active_effects[effect.object_id] = effect
+        if self.simulate:
+            log.info("simulate %s effect %s fx=%s", self.info.name, effect.object_id, effect.fx)
+            self.state_body()
+            return
+        await self._post_state(self.state_body())
+
+    async def clear_effect(self, object_id: str) -> None:
+        self.active_effects.pop(object_id, None)
+
+    def state_body(self, updates: dict[int, tuple[int, int, int]] | None = None) -> dict:
+        updates = dict(updates or {})
+        if updates:
+            max_idx = max(updates)
+            total = max(max_idx + 1, self.info.led_count, len(self.pixels), 1)
+        else:
+            total = max(self.info.led_count, len(self.pixels), 1)
         self.ensure_size(total)
         for idx, color in updates.items():
             if 0 <= idx < len(self.pixels):
@@ -219,10 +380,53 @@ class WledDevice:
                     "i": colors,
                 }
             )
-        # Kein {"stop": 0}: das löscht Segmente. Bei zwei WLED-Ausgängen
-        # ist Segment 1 der zweite Bus – der würde mit ausgehen.
+        next_id = max((out.index for out in outputs), default=-1) + 1
+        maxseg = self.info.max_segments or 16
+        overlay_ids: list[int] = []
+        for effect in self.active_effects.values():
+            r, g, b = effect.color
+            for start, stop in contiguous_ranges(effect.leds):
+                if next_id >= maxseg:
+                    log.warning(
+                        "WLED %s: max. %s Segmente erreicht, Effekt %s unvollständig",
+                        self.info.name,
+                        maxseg,
+                        effect.object_id,
+                    )
+                    break
+                segs.append(
+                    {
+                        "id": next_id,
+                        "start": start,
+                        "stop": stop,
+                        "grp": 0,
+                        "spc": 0,
+                        "of": 0,
+                        "on": True,
+                        "frz": False,
+                        "fx": int(effect.fx),
+                        "sx": int(effect.sx),
+                        "ix": int(effect.ix),
+                        "pal": int(effect.pal),
+                        "col": [[r, g, b], [0, 0, 0], [0, 0, 0]],
+                        "bri": int(effect.bri),
+                        "sel": False,
+                    }
+                )
+                overlay_ids.append(next_id)
+                next_id += 1
+        # Overlay-Segmente, die nicht mehr aktiv sind, müssen explizit
+        # gelöscht werden. Sonst läuft der WLED-Effekt weiter. stop:0 nur
+        # für IDs oberhalb der Hardware-Ausgänge – nie für Bus-Segmente.
+        stale = [seg_id for seg_id in self.posted_overlay_ids if seg_id not in overlay_ids]
+        hardware_ids = {out.index for out in outputs}
+        for seg_id in stale:
+            if seg_id in hardware_ids:
+                continue
+            segs.append({"id": seg_id, "on": False, "fx": 0, "frz": True, "stop": 0})
+        self.posted_overlay_ids = overlay_ids
         body: dict = {"tt": 0, "seg": segs}
-        if any(pixel != (0, 0, 0) for pixel in self.pixels):
+        if any(pixel != (0, 0, 0) for pixel in self.pixels) or self.active_effects:
             body["on"] = True
         return body
 
@@ -311,6 +515,17 @@ class WledPool:
                 device.info.led_count = existing.info.led_count
             if existing.info.max_segments:
                 device.info.max_segments = existing.info.max_segments
+            if existing.info.effects:
+                device.info.effects = list(existing.info.effects)
+            if existing.info.palettes:
+                device.info.palettes = list(existing.info.palettes)
+            if existing.info.warnings:
+                device.info.warnings = list(existing.info.warnings)
+            if existing.active_effects:
+                device.active_effects = dict(existing.active_effects)
+            if existing.posted_overlay_ids:
+                device.posted_overlay_ids = list(existing.posted_overlay_ids)
+            device.info.reachable = existing.info.reachable
         device.ensure_size(max(leds or 1, len(device.pixels), device.info.led_count or 0))
         self.devices[name] = device
         return device

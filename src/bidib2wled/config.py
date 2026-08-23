@@ -117,6 +117,25 @@ class SignalConfig(BaseModel):
     begriffe: dict[int, SignalAspectConfig]
 
 
+class SpecialConfig(BaseModel):
+    """WLED-Effekt auf zusammenhängenden LED-Bereichen (Objekttyp Spezial)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+    controller: str
+    leds: list[int] = Field(min_length=1)
+    effekt: int = Field(default=0, ge=0)
+    palette: int = Field(default=0, ge=0)
+    geschwindigkeit: int = Field(default=128, ge=0, le=255)
+    intensitaet: int = Field(default=128, ge=0, le=255)
+    farbe: str = "FFFFFF"
+    helligkeit: int | None = Field(default=None, ge=1, le=255)
+
+    @field_validator("farbe")
+    @classmethod
+    def _color(cls, value: str) -> str:
+        return LampConfig._color(value)
+
+
 class ControllerConfig(BaseModel):
     name: str
     mdns: str | None = None
@@ -143,7 +162,9 @@ class NetBidibConfig(BaseModel):
     accessories: dict[int, str] = Field(default_factory=dict)
 
 
-class RocrailConfig(BaseModel):
+class ClientConfig(BaseModel):
+    """Zukünftiger Steuerungs-Client (nicht netBiDiB). Alter YAML-Schlüssel: rocrail."""
+
     aktiv: bool = False
     host: str = "127.0.0.1"
     port: int = 8051
@@ -152,7 +173,18 @@ class RocrailConfig(BaseModel):
 
 class AdapterConfig(BaseModel):
     netbidib: NetBidibConfig = Field(default_factory=NetBidibConfig)
-    rocrail: RocrailConfig = Field(default_factory=RocrailConfig)
+    client: ClientConfig = Field(default_factory=ClientConfig)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_rocrail(cls, data: Any) -> Any:
+        if not isinstance(data, dict) or "rocrail" not in data:
+            return data
+        data = dict(data)
+        legacy = data.pop("rocrail")
+        if "client" not in data:
+            data["client"] = legacy
+        return data
 
 
 class DiscoveryConfig(BaseModel):
@@ -184,6 +216,7 @@ class AppConfig(BaseModel):
     gruppen: dict[str, GroupConfig] = Field(default_factory=dict)
     sequenzen: dict[str, SequenceConfig] = Field(default_factory=dict)
     signale: dict[str, SignalConfig] = Field(default_factory=dict)
+    spezial: dict[str, SpecialConfig] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _refs(self) -> AppConfig:
@@ -197,7 +230,17 @@ class AppConfig(BaseModel):
         for signal_id, signal in self.signale.items():
             if signal.controller not in names:
                 raise ValueError(f"Signal {signal_id}: unbekannter Controller {signal.controller!r}")
-        known = set(self.lampen) | set(self.haeuser) | set(self.gruppen) | set(self.sequenzen) | set(self.signale)
+        for spec_id, spec in self.spezial.items():
+            if spec.controller not in names:
+                raise ValueError(f"Spezial {spec_id}: unbekannter Controller {spec.controller!r}")
+        known = (
+            set(self.lampen)
+            | set(self.haeuser)
+            | set(self.gruppen)
+            | set(self.sequenzen)
+            | set(self.signale)
+            | set(self.spezial)
+        )
         for house_id, house in self.haeuser.items():
             for window_id in house.fenster:
                 known.add(f"{house_id}.{window_id}")
@@ -222,7 +265,14 @@ class AppConfig(BaseModel):
 
     def switchable_object_ids(self) -> list[str]:
         """Objekte mit eigener BiDiB-Accessory-Nummer (Fenster nur nach Handzuweisung)."""
-        return list(self.lampen) + list(self.haeuser) + list(self.gruppen) + list(self.sequenzen) + list(self.signale)
+        return (
+            list(self.lampen)
+            + list(self.haeuser)
+            + list(self.gruppen)
+            + list(self.sequenzen)
+            + list(self.signale)
+            + list(self.spezial)
+        )
 
     def all_object_ids(self) -> list[str]:
         ids = self.switchable_object_ids()
@@ -301,6 +351,8 @@ class AppConfig(BaseModel):
             return "sequenz"
         if object_id in self.signale:
             return "signal"
+        if object_id in self.spezial:
+            return "spezial"
         if "." in object_id:
             house_id, window_id = object_id.split(".", 1)
             house = self.haeuser.get(house_id)
@@ -313,6 +365,45 @@ class AppConfig(BaseModel):
             begriffe = self.signale[object_id].begriffe
             return max(begriffe) + 1 if begriffe else 2
         return 2
+
+    def led_usage(self) -> dict[str, dict[str, list[str]]]:
+        """Controller → LED-Index (als String) → Objekt-IDs, die diese LED nutzen."""
+        usage: dict[str, dict[str, list[str]]] = {}
+
+        def add(controller: str, leds, obj_id: str) -> None:
+            bucket = usage.setdefault(controller, {})
+            for led in leds:
+                key = str(int(led))
+                bucket.setdefault(key, []).append(obj_id)
+
+        for lamp_id, lamp in self.lampen.items():
+            add(lamp.controller, lamp.leds, lamp_id)
+        for house_id, house in self.haeuser.items():
+            for window_id, window in house.fenster.items():
+                add(house.controller, window.leds, f"{house_id}.{window_id}")
+        for signal_id, signal in self.signale.items():
+            leds: set[int] = set()
+            for begriff in signal.begriffe.values():
+                leds.update(begriff.leds)
+            add(signal.controller, leds, signal_id)
+        for spec_id, spec in self.spezial.items():
+            add(spec.controller, spec.leds, spec_id)
+        return usage
+
+    def object_usage(self) -> dict[str, list[str]]:
+        """Objekt-ID → Gruppen/Sequenzen, die das Objekt referenzieren."""
+        usage: dict[str, list[str]] = {}
+
+        def add(obj_id: str, owner: str) -> None:
+            usage.setdefault(obj_id, []).append(owner)
+
+        for group_id, group in self.gruppen.items():
+            for member in group.mitglieder:
+                add(member, group_id)
+        for seq_id, seq in self.sequenzen.items():
+            for group_id in seq.gruppen:
+                add(group_id, seq_id)
+        return usage
 
 
 def host_setup_info(kind: str, accessory: int | None) -> list[dict[str, str]]:
