@@ -16,6 +16,7 @@ Läuft unter **Linux**, **Windows** und **macOS** (Python 3.11 oder neuer).
 | **Sequenz** | gestaffeltes Ein- oder Ausschalten mit Pausen | an = Reihenfolge „an“, aus = umgekehrt |
 | **Signal** | mehrere Begriffe (Halt, Fahrt, …), je Begriff eigene LEDs/Farben | Begriff (Aspekt) 0, 1, 2, … |
 | **Spezial** | eingebauter WLED-Effekt (Feuer, Kerze, …) auf den gewählten LEDs | aus / an |
+| **Fahrzeug** | Standmodell mit Lichtkanälen (Scheinwerfer, Blinker, Rundumlicht, …) | Modus (aus, Licht, Warnblinker, Einsatz, …) |
 
 Zusätzlich: WLED-Geräte im Netz finden, LEDs am Modell identifizieren (blinken lassen), alles in der Weboberfläche anlegen und testen, dauerhaft als Dienst betreiben.
 
@@ -141,7 +142,7 @@ Auf jedem Controller (WLED-Weboberfläche oder App), **einmalig**:
 2. Unter **Einrichtung** den Knotennamen und den netBiDiB-Port prüfen. **Server** ist der Normalfall: Rocrail verbindet sich zur Bridge (Standardport **62875**).
 3. Gefundene WLED-Geräte benennen und **übernehmen** – oder IP von Hand eintragen.
 4. Unter **Status** die IP eines Controllers anklicken, um dessen WLED-Seite zu öffnen. Unter **Einrichtung** Controller, Ausgang und LED wählen und **identifizieren** („welche Laterne blinkt?“).
-5. Unter **Objekte** Lampen, Häuser, Gruppen, Sequenzen, Signale und Spezial-Effekte anlegen. Speichern gibt eine Rückmeldung; Farben lassen sich über Farbrad, HTML-Wert oder RGB wählen. Bereits vergebene LEDs und Objekte sind in den Auswahllisten markiert.
+5. Unter **Objekte** Lampen, Häuser, Gruppen, Sequenzen, Signale, Spezial-Effekte und Fahrzeuge anlegen. Speichern gibt eine Rückmeldung; Farben lassen sich über Farbrad, HTML-Wert oder RGB wählen. Bereits vergebene LEDs und Objekte sind in den Auswahllisten markiert.
 6. Unter **Status → Verfügbare Objekte** testen (Schalter bzw. Signalbegriff), bei Bedarf **Ändern** oder **Löschen**.
 
 Die Datei `config.yaml` ist das einzige Speicherformat. Die Oberfläche schreibt sie. Von Hand editieren geht ebenfalls; danach in der Oberfläche **Von Disk neu laden** oder einfach speichern – der Dienst prüft die Datei alle 2 Sekunden.
@@ -265,6 +266,7 @@ Was der Klick bewirkt:
 - **Lampe:** LEDs an oder aus
 - **Haus:** Fenster nach dem in der Bridge eingestellten Verhalten
 - **Spezial:** WLED-Effekt an oder aus (kein Pixel-für-Pixel)
+- **Fahrzeug:** Modus 1 = Licht, höhere Modi je nach Anlage (Warnblinker, Einsatz); Blinker mehrerer Fahrzeuge sind nicht synchron
 - **Gruppe:** alle Mitglieder
 - **Sequenz:** an = gestaffelt ein, aus = gestaffelt aus; ein erneuter Befehl bricht eine laufende Sequenz ab
 
@@ -294,6 +296,8 @@ In Rocview: **Tabellen → Signale → Neu**.
 | Gelb | 1 | z. B. Halt erwarten |
 
 Die Begriffsnummern sind dieselben wie in der Objektliste der Bridge (Auswahl **Halt** / **Fahrt** …) bzw. in der YAML unter `signale: … begriffe:`.
+
+**Fahrzeuge** mit mehreren Modi (Licht, Warnblinker, Einsatz) werden in Rocrail ebenfalls als Signal angelegt. Die Modusnummern entsprechen der Auswahl in der Objektliste (0 = Aus).
 
 ### 7. Kurz-Check
 
@@ -365,9 +369,31 @@ spezial:
     geschwindigkeit: 128
     intensitaet: 128
     farbe: "FF6A00"
+
+fahrzeuge:
+  pkw-rot:
+    controller: dorf
+    kanaele:
+      licht: { leds: [30], anteil: rgb, farbe: "FFFFCC", art: dauer }
+      blinker-l: { leds: [31], anteil: r, farbe: "FF8000", art: blinker }
+      blinker-r: { leds: [31], anteil: g, farbe: "FF8000", art: blinker }
+    modi:
+      0: { name: Aus, kanaele: [] }
+      1: { name: Licht, kanaele: [licht] }
+      2: { name: Warnblinker, kanaele: [licht, blinker-l, blinker-r] }
+  feuerwehr:
+    controller: dorf
+    kanaele:
+      scheinwerfer: { leds: [32], anteil: r, farbe: "FFFFCC", art: dauer }
+      ruecklicht: { leds: [32], anteil: g, farbe: "FF0000", art: dauer }
+      rundum: { leds: [33], anteil: rgb, farbe: "0000FF", art: rundum }
+    modi:
+      0: { name: Aus, kanaele: [] }
+      1: { name: Licht, kanaele: [scheinwerfer, ruecklicht] }
+      3: { name: Einsatz, kanaele: [scheinwerfer, ruecklicht, rundum] }
 ```
 
-Farben sind `RRGGBB` ohne `#`. LED-Indizes sind global auf dem Controller (Ausgang 1 beginnt bei 0). Spezial-Objekte nutzen die WLED-Effekte des Controllers (`effekt` / `palette` sind die Nummern aus der Weboberfläche).
+Farben sind `RRGGBB` ohne `#`. LED-Indizes sind global auf dem Controller (Ausgang 1 beginnt bei 0). Spezial-Objekte nutzen die WLED-Effekte des Controllers (`effekt` / `palette` sind die Nummern aus der Weboberfläche). Fahrzeuge nutzen `anteil` (`r`/`g`/`b`/`rgb`) für einzelne LEDs an einem WS2811; `art: rundum` auf einem Pixel lässt die drei Anteile nacheinander aufleuchten. Blinker verschiedener Fahrzeuge haben unterschiedliche Perioden.
 
 ## Ports
 

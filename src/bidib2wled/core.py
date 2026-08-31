@@ -1,14 +1,16 @@
-"""Protokollneutraler Kern: Schalten von Lampen, Häusern, Gruppen, Sequenzen, Signalen."""
+"""Protokollneutraler Kern: Schalten von Lampen, Häusern, Gruppen, Sequenzen, Signalen, Fahrzeugen."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
 import random
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from bidib2wled.config import AppConfig
+from bidib2wled.vehicles import apply_vehicle_to_pixels, vehicle_has_animation
 from bidib2wled.wled import ActiveEffect, WledPool, rgb_from_hex
 
 log = logging.getLogger(__name__)
@@ -38,6 +40,9 @@ class Engine:
         self._tasks: dict[str, asyncio.Task] = {}
         self._status: list[StatusCallback] = []
         self._lock = asyncio.Lock()
+        self._vehicle_aspects: dict[str, int] = {}
+        self._vehicle_task: asyncio.Task | None = None
+        self.now = time.monotonic
 
     def on_status(self, callback: StatusCallback) -> None:
         self._status.append(callback)
@@ -46,6 +51,14 @@ class Engine:
         self.config = config
         for obj_id in config.all_object_ids():
             self.states.setdefault(obj_id, ObjectState())
+        for vehicle_id in list(self._vehicle_aspects):
+            if vehicle_id not in config.fahrzeuge:
+                self._vehicle_aspects.pop(vehicle_id, None)
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._ensure_vehicle_ticker()
 
     def state_of(self, object_id: str) -> ObjectState:
         return self.states.setdefault(object_id, ObjectState())
@@ -81,6 +94,8 @@ class Engine:
                 await self._switch_signal(object_id, aspect)
             elif object_id in self.config.spezial:
                 await self._switch_special(object_id, aspect)
+            elif object_id in self.config.fahrzeuge:
+                await self._switch_vehicle(object_id, aspect)
             elif "." in object_id:
                 await self._switch_window(object_id, aspect)
             else:
@@ -227,6 +242,79 @@ class Engine:
             await device.clear_effect(object_id)
             await self._set_leds(spec.controller, {idx: (0, 0, 0) for idx in spec.leds})
         self.state_of(object_id).aspect = 1 if aspect else 0
+
+    async def _switch_vehicle(self, vehicle_id: str, aspect: int) -> None:
+        vehicle = self.config.fahrzeuge[vehicle_id]
+        modi = vehicle.resolved_modi()
+        if aspect not in modi and aspect:
+            raise ValueError(f"Fahrzeug {vehicle_id}: Modus {aspect} unbekannt")
+        mode = modi.get(aspect)
+        if mode is None or not mode.kanaele:
+            self._vehicle_aspects.pop(vehicle_id, None)
+        else:
+            self._vehicle_aspects[vehicle_id] = aspect
+        await self._tick_vehicles(force_ids=(vehicle_id,))
+        self._ensure_vehicle_ticker()
+
+    def _ensure_vehicle_ticker(self) -> None:
+        if not self._vehicle_needs_ticker():
+            return
+        task = self._vehicle_task
+        if task is None or task.done():
+            self._vehicle_task = asyncio.create_task(self._vehicle_ticker(), name="vehicle-ticker")
+
+    def _vehicle_needs_ticker(self) -> bool:
+        for vehicle_id, aspect in self._vehicle_aspects.items():
+            vehicle = self.config.fahrzeuge.get(vehicle_id)
+            if vehicle and vehicle_has_animation(vehicle, aspect):
+                return True
+        return False
+
+    async def _vehicle_ticker(self) -> None:
+        try:
+            while self._vehicle_needs_ticker():
+                await asyncio.sleep(0.05)
+                try:
+                    await self._tick_vehicles()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    log.exception("Fahrzeug-Animation")
+        finally:
+            self._vehicle_task = None
+
+    async def _tick_vehicles(self, force_ids: tuple[str, ...] = ()) -> None:
+        ids = set(self._vehicle_aspects) | set(force_ids)
+        if not ids:
+            return
+        now = self.now()
+        by_controller: dict[str, list[str]] = {}
+        for vehicle_id in ids:
+            vehicle = self.config.fahrzeuge.get(vehicle_id)
+            if vehicle is None:
+                continue
+            by_controller.setdefault(vehicle.controller, []).append(vehicle_id)
+        for controller, vehicle_ids in by_controller.items():
+            device = self.pool.get(controller)
+            if device is None:
+                if force_ids:
+                    raise KeyError(f"Controller {controller} nicht verbunden")
+                continue
+            working = list(device.pixels)
+            touched: set[int] = set()
+            for vehicle_id in sorted(vehicle_ids):
+                vehicle = self.config.fahrzeuge[vehicle_id]
+                aspect = self._vehicle_aspects.get(vehicle_id, 0)
+                touched |= apply_vehicle_to_pixels(working, vehicle, vehicle_id, aspect, now)
+            updates: dict[int, tuple[int, int, int]] = {}
+            for index in touched:
+                if index >= len(working):
+                    continue
+                previous = device.pixels[index] if index < len(device.pixels) else (0, 0, 0)
+                if working[index] != previous:
+                    updates[index] = working[index]
+            if updates:
+                await self._set_leds(controller, updates)
 
     async def _set_leds(self, controller: str, updates: dict[int, tuple[int, int, int]]) -> None:
         device = self.pool.get(controller)

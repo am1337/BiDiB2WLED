@@ -117,6 +117,133 @@ class SignalConfig(BaseModel):
     begriffe: dict[int, SignalAspectConfig]
 
 
+VEHICLE_ARTS = ("dauer", "blinker", "rundum", "blitz", "doppelblitz")
+VEHICLE_EINSATZ_ARTS = ("rundum", "blitz", "doppelblitz")
+_ANTEIL_ALIASES = {
+    "r": "r",
+    "rot": "r",
+    "red": "r",
+    "g": "g",
+    "gruen": "g",
+    "grün": "g",
+    "green": "g",
+    "b": "b",
+    "blau": "b",
+    "blue": "b",
+    "rgb": "rgb",
+    "alle": "rgb",
+    "all": "rgb",
+}
+_ART_ALIASES = {
+    "dauerlicht": "dauer",
+    "warnblinker": "blinker",
+    "blinker-links": "blinker",
+    "blinker-rechts": "blinker",
+    "blinker_links": "blinker",
+    "blinker_rechts": "blinker",
+    "rundumlicht": "rundum",
+    "beacon": "rundum",
+    "strobe": "blitz",
+    "double": "doppelblitz",
+    "doppelblitz": "doppelblitz",
+}
+
+
+class VehicleChannelConfig(BaseModel):
+    """Ein Lichtkanal eines Fahrzeugs (Scheinwerfer, Blinker, Rundumlicht, …)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+    leds: list[int] = Field(min_length=1)
+    anteil: Literal["r", "g", "b", "rgb"] = "rgb"
+    farbe: str = "FFFFFF"
+    helligkeit: int = Field(default=180, ge=0, le=255)
+    art: Literal["dauer", "blinker", "rundum", "blitz", "doppelblitz"] = "dauer"
+
+    @field_validator("anteil", mode="before")
+    @classmethod
+    def _anteil(cls, value: Any) -> str:
+        raw = str(value or "rgb").strip().lower()
+        mapped = _ANTEIL_ALIASES.get(raw)
+        if mapped is None:
+            raise ValueError(f"anteil muss r, g, b oder rgb sein: {value!r}")
+        return mapped
+
+    @field_validator("art", mode="before")
+    @classmethod
+    def _art(cls, value: Any) -> str:
+        raw = str(value or "dauer").strip().lower().replace("ü", "ue")
+        raw = _ART_ALIASES.get(raw, raw)
+        if raw not in VEHICLE_ARTS:
+            raise ValueError(f"Unbekannte Beleuchtungsart: {value!r}")
+        return raw
+
+    @field_validator("farbe")
+    @classmethod
+    def _color(cls, value: str) -> str:
+        return LampConfig._color(value)
+
+
+class VehicleModeConfig(BaseModel):
+    name: str
+    kanaele: list[str] = Field(default_factory=list)
+
+
+def default_vehicle_modi(kanaele: dict[str, VehicleChannelConfig]) -> dict[int, VehicleModeConfig]:
+    """Aus / Licht / Warnblinker / Einsatz, je nachdem welche Kanalarten existieren."""
+    dauer = [name for name, ch in kanaele.items() if ch.art == "dauer"]
+    blinker = [name for name, ch in kanaele.items() if ch.art == "blinker"]
+    einsatz = [name for name, ch in kanaele.items() if ch.art in VEHICLE_EINSATZ_ARTS]
+    modi: dict[int, VehicleModeConfig] = {0: VehicleModeConfig(name="Aus", kanaele=[])}
+    next_n = 1
+    if dauer:
+        modi[next_n] = VehicleModeConfig(name="Licht", kanaele=list(dauer))
+        next_n += 1
+    if blinker:
+        modi[next_n] = VehicleModeConfig(name="Warnblinker", kanaele=list(dauer) + blinker)
+        next_n += 1
+    if einsatz:
+        modi[next_n] = VehicleModeConfig(name="Einsatz", kanaele=list(dauer) + einsatz)
+        next_n += 1
+    if len(modi) == 1:
+        modi[1] = VehicleModeConfig(name="An", kanaele=list(kanaele))
+    return modi
+
+
+class VehicleConfig(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    controller: str
+    kanaele: dict[str, VehicleChannelConfig] = Field(min_length=1)
+    modi: dict[int, VehicleModeConfig] = Field(default_factory=dict)
+    blink_periode: Any = Field(default="0.75s")
+    rundum_schritt: Any = Field(default="0.12s")
+
+    @property
+    def blink_period_s(self) -> float:
+        return parse_duration(self.blink_periode)
+
+    @property
+    def rundum_step_s(self) -> float:
+        return parse_duration(self.rundum_schritt)
+
+    def resolved_modi(self) -> dict[int, VehicleModeConfig]:
+        return self.modi if self.modi else default_vehicle_modi(self.kanaele)
+
+    def all_leds(self) -> set[int]:
+        leds: set[int] = set()
+        for channel in self.kanaele.values():
+            leds.update(channel.leds)
+        return leds
+
+    @model_validator(mode="after")
+    def _mode_refs(self) -> VehicleConfig:
+        known = set(self.kanaele)
+        for mode_id, mode in self.modi.items():
+            for name in mode.kanaele:
+                if name not in known:
+                    raise ValueError(f"Modus {mode_id}: unbekannter Kanal {name!r}")
+        return self
+
+
 class SpecialConfig(BaseModel):
     """WLED-Effekt auf zusammenhängenden LED-Bereichen (Objekttyp Spezial)."""
 
@@ -217,6 +344,7 @@ class AppConfig(BaseModel):
     sequenzen: dict[str, SequenceConfig] = Field(default_factory=dict)
     signale: dict[str, SignalConfig] = Field(default_factory=dict)
     spezial: dict[str, SpecialConfig] = Field(default_factory=dict)
+    fahrzeuge: dict[str, VehicleConfig] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _refs(self) -> AppConfig:
@@ -233,6 +361,9 @@ class AppConfig(BaseModel):
         for spec_id, spec in self.spezial.items():
             if spec.controller not in names:
                 raise ValueError(f"Spezial {spec_id}: unbekannter Controller {spec.controller!r}")
+        for vehicle_id, vehicle in self.fahrzeuge.items():
+            if vehicle.controller not in names:
+                raise ValueError(f"Fahrzeug {vehicle_id}: unbekannter Controller {vehicle.controller!r}")
         known = (
             set(self.lampen)
             | set(self.haeuser)
@@ -240,6 +371,7 @@ class AppConfig(BaseModel):
             | set(self.sequenzen)
             | set(self.signale)
             | set(self.spezial)
+            | set(self.fahrzeuge)
         )
         for house_id, house in self.haeuser.items():
             for window_id in house.fenster:
@@ -272,6 +404,7 @@ class AppConfig(BaseModel):
             + list(self.sequenzen)
             + list(self.signale)
             + list(self.spezial)
+            + list(self.fahrzeuge)
         )
 
     def all_object_ids(self) -> list[str]:
@@ -353,6 +486,8 @@ class AppConfig(BaseModel):
             return "signal"
         if object_id in self.spezial:
             return "spezial"
+        if object_id in self.fahrzeuge:
+            return "fahrzeug"
         if "." in object_id:
             house_id, window_id = object_id.split(".", 1)
             house = self.haeuser.get(house_id)
@@ -364,6 +499,9 @@ class AppConfig(BaseModel):
         if object_id in self.signale:
             begriffe = self.signale[object_id].begriffe
             return max(begriffe) + 1 if begriffe else 2
+        if object_id in self.fahrzeuge:
+            modi = self.fahrzeuge[object_id].resolved_modi()
+            return max(modi) + 1 if modi else 2
         return 2
 
     def led_usage(self) -> dict[str, dict[str, list[str]]]:
@@ -388,6 +526,8 @@ class AppConfig(BaseModel):
             add(signal.controller, leds, signal_id)
         for spec_id, spec in self.spezial.items():
             add(spec.controller, spec.leds, spec_id)
+        for vehicle_id, vehicle in self.fahrzeuge.items():
+            add(vehicle.controller, vehicle.all_leds(), vehicle_id)
         return usage
 
     def object_usage(self) -> dict[str, list[str]]:
@@ -424,6 +564,11 @@ def _rocrail_setup(kind: str, accessory: int | None) -> dict[str, str] | None:
     base = f"Adresse {rocrail} (Adresse+1), Port 0, Bus 0, Protokoll Default, Zubehör an"
     if kind == "signal":
         return {"program": "Rocrail", "text": f"Signal: {base}; Begriffe wie in der Auswahl"}
+    if kind == "fahrzeug":
+        return {
+            "program": "Rocrail",
+            "text": f"Signal: {base}; Modi wie in der Auswahl (0=Aus)",
+        }
     return {"program": "Rocrail", "text": f"Ausgang: {base}"}
 
 

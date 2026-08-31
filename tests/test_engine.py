@@ -1,3 +1,6 @@
+import asyncio
+import contextlib
+
 import pytest
 
 from bidib2wled.config import AppConfig
@@ -44,6 +47,25 @@ def engine():
                     "intensitaet": 180,
                     "farbe": "FF6A00",
                 }
+            },
+            "fahrzeuge": {
+                "pkw-a": {
+                    "controller": "dorf",
+                    "kanaele": {
+                        "licht": {"leds": [12], "anteil": "r", "farbe": "FFFFCC", "art": "dauer"},
+                        "rueck": {"leds": [12], "anteil": "g", "farbe": "FF0000", "art": "dauer"},
+                        "blinker-l": {"leds": [13], "anteil": "r", "farbe": "FF8000", "art": "blinker"},
+                        "blinker-r": {"leds": [13], "anteil": "g", "farbe": "FF8000", "art": "blinker"},
+                    },
+                },
+                "feuerwehr": {
+                    "controller": "dorf",
+                    "rundum_schritt": "0.12s",
+                    "kanaele": {
+                        "scheinwerfer": {"leds": [16], "anteil": "rgb", "farbe": "FFFFCC", "art": "dauer"},
+                        "rundum": {"leds": [17], "anteil": "rgb", "farbe": "0000FF", "art": "rundum"},
+                    },
+                },
             },
         }
     )
@@ -109,3 +131,59 @@ async def test_special_on_off(engine):
     assert device.pixels[9] == (0, 0, 0)
     assert device.posted_overlay_ids == []
     assert all(seg.get("frz") is not False for seg in device.state_body()["seg"])
+
+
+async def _stop_vehicle_anim(engine: Engine) -> None:
+    engine._vehicle_aspects.clear()
+    task = engine._vehicle_task
+    if task and not task.done():
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await task
+
+
+@pytest.mark.asyncio
+async def test_vehicle_dauer_merge_and_off(engine):
+    await engine.switch("pkw-a", 1)
+    pix = engine.pool.get("dorf").pixels
+    assert pix[12][0] > 0
+    assert pix[12][1] > 0
+    assert pix[12][2] == 0
+    assert pix[13] == (0, 0, 0)
+    await engine.switch("pkw-a", 0)
+    assert pix[12] == (0, 0, 0)
+
+
+@pytest.mark.asyncio
+async def test_vehicle_rundum_and_ticker(engine):
+    from bidib2wled.vehicles import vehicle_timing
+
+    vehicle = engine.config.fahrzeuge["feuerwehr"]
+    _, phase = vehicle_timing("feuerwehr", vehicle.blink_period_s)
+    engine.now = lambda: -phase + 0.001
+    await engine.switch("feuerwehr", 2)
+    pix = engine.pool.get("dorf").pixels
+    assert pix[16] != (0, 0, 0)
+    assert pix[17][0] > 0
+    assert pix[17][1] == 0
+    assert pix[17][2] == 0
+    engine.now = lambda: -phase + 0.13
+    await engine._tick_vehicles()
+    assert pix[17][0] == 0
+    assert pix[17][1] > 0
+    await engine.switch("feuerwehr", 0)
+    assert pix[16] == (0, 0, 0)
+    assert pix[17] == (0, 0, 0)
+    await _stop_vehicle_anim(engine)
+
+
+@pytest.mark.asyncio
+async def test_vehicle_warnblinker_starts_animation(engine):
+    await engine.switch("pkw-a", 2)
+    assert engine._vehicle_task is not None
+    assert not engine._vehicle_task.done()
+    await engine.switch("pkw-a", 0)
+    pix = engine.pool.get("dorf").pixels
+    assert pix[13] == (0, 0, 0)
+    await _stop_vehicle_anim(engine)
+

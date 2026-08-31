@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>BiDiB2WLED</title>
-  <link rel="stylesheet" href="/static/style.css?v=16">
+  <link rel="stylesheet" href="/static/style.css?v=17">
 </head>
 <body>
   <header>
@@ -203,6 +203,70 @@
           <button type="button" id="sp-cancel" class="secondary hidden">Abbrechen</button>
         </div>
       </article>
+      <article id="art-fahrzeug">
+        <h2 id="v-title">Fahrzeug anlegen</h2>
+        <p>
+          Standmodell mit Lichtkanälen. Ein WS2811-Chip ist in WLED ein Pixel mit drei Anteilen
+          (R, G, B) – damit lassen sich drei einzelne LEDs unabhängig schalten.
+          Rundumlicht auf einem Chip lässt R, G und B nacheinander aufleuchten.
+          Blinker mehrerer Fahrzeuge laufen absichtlich leicht unterschiedlich schnell.
+        </p>
+        <div class="row wrap">
+          <input id="v-id" placeholder="ID pkw-rot">
+          <label>Controller <select id="v-ctrl"></select></label>
+          <label>Blink-Grundperiode (s)
+            <input id="v-blink" type="number" min="0.2" step="0.05" value="0.75" title="Basis; jedes Fahrzeug weicht etwas ab">
+          </label>
+          <label>Rundum-Schritt (s)
+            <input id="v-rundum" type="number" min="0.04" step="0.02" value="0.12" title="Dauer, bis die nächste LED des Rundumlichts aufleuchtet">
+          </label>
+        </div>
+        <h3>Kanäle</h3>
+        <div class="row wrap">
+          <input id="v-ch-name" placeholder="Kanalname scheinwerfer">
+          <label>Ausgang <select id="v-out"></select></label>
+          <label>LEDs <select id="v-leds" multiple size="6"></select></label>
+          <label>WS2811-Anteil
+            <select id="v-anteil">
+              <option value="rgb">alle (RGB)</option>
+              <option value="r">nur Rot</option>
+              <option value="g">nur Grün</option>
+              <option value="b">nur Blau</option>
+            </select>
+          </label>
+          <label>Farbe
+            <span class="color-field">
+              <span class="color-swatch" title="Farbe wählen"></span>
+              <input id="v-farbe" value="FFFFFF" placeholder="RRGGBB" size="8" spellcheck="false" autocomplete="off">
+            </span>
+          </label>
+          <label>Art
+            <select id="v-art">
+              <option value="dauer">Dauerlicht</option>
+              <option value="blinker">Blinker</option>
+              <option value="rundum">Rundumlicht</option>
+              <option value="blitz">Blitz</option>
+              <option value="doppelblitz">Doppelblitz</option>
+            </select>
+          </label>
+          <button type="button" id="v-ch-add" class="secondary">Kanal übernehmen</button>
+        </div>
+        <textarea id="v-kanaele" rows="4" placeholder="scheinwerfer:30:rgb:FFFFCC:dauer&#10;blinker-l:31:r:FF8000:blinker&#10;blinker-r:31:g:FF8000:blinker"></textarea>
+        <h3>Modi</h3>
+        <p>Welche Kanäle in welchem Schaltzustand aktiv sind. „Standard-Modi“ erzeugt Aus, Licht, Warnblinker und Einsatz je nach Kanalarten.</p>
+        <div class="row wrap">
+          <input id="v-mod-n" type="number" min="0" value="0" title="Modus-Nummer" placeholder="Nr.">
+          <input id="v-mod-name" placeholder="Licht">
+          <label>Kanäle <select id="v-mod-kan" multiple size="5"></select></label>
+          <button type="button" id="v-mod-add" class="secondary">Modus übernehmen</button>
+          <button type="button" id="v-mod-default" class="secondary">Standard-Modi</button>
+        </div>
+        <textarea id="v-modi" rows="3" placeholder="0:Aus:&#10;1:Licht:scheinwerfer&#10;2:Warnblinker:scheinwerfer,blinker-l,blinker-r"></textarea>
+        <div class="row">
+          <button id="v-add">Fahrzeug speichern</button>
+          <button type="button" id="v-cancel" class="secondary hidden">Abbrechen</button>
+        </div>
+      </article>
     </section>
 
     <section id="tab-config" class="hidden">
@@ -236,6 +300,6 @@
       <label>B <input id="cp-b" type="number" min="0" max="255"></label>
     </div>
   </div>
-  <script src="/static/app.js?v=19"></script>
+  <script src="/static/app.js?v=20"></script>
 </body>
 </html>

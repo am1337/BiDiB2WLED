@@ -1,6 +1,7 @@
 from bidib2wled.config import (
     AppConfig,
     ControllerConfig,
+    VehicleConfig,
     load_config,
     normalize_mac,
     parse_delay_range,
@@ -59,6 +60,13 @@ spezial:
     geschwindigkeit: 90
     intensitaet: 180
     farbe: "FF6A00"
+fahrzeuge:
+  pkw-rot:
+    controller: dorf
+    kanaele:
+      licht: { leds: [12], anteil: rgb, farbe: "FFFFCC", art: dauer }
+      blinker-l: { leds: [13], anteil: r, farbe: "FF8000", art: blinker }
+      blinker-r: { leds: [13], anteil: g, farbe: "FF8000", art: blinker }
 """
     path = tmp_path / "c.yaml"
     path.write_text(text, encoding="utf-8")
@@ -70,11 +78,16 @@ spezial:
     assert cfg.object_kind("haus-a.wz") == "fenster"
     assert cfg.object_kind("sig") == "signal"
     assert cfg.object_kind("kamin") == "spezial"
+    assert cfg.object_kind("pkw-rot") == "fahrzeug"
     assert cfg.aspect_count("sig") == 2
+    assert cfg.aspect_count("pkw-rot") == 3
     assert "kamin" in cfg.switchable_object_ids()
+    assert "pkw-rot" in cfg.switchable_object_ids()
     usage = cfg.led_usage()
     assert usage["dorf"]["0"] == ["laterne-1"]
     assert "kamin" in usage["dorf"]["8"]
+    assert "pkw-rot" in usage["dorf"]["12"]
+    assert "pkw-rot" in usage["dorf"]["13"]
     assert cfg.object_usage()["laterne-1"] == ["strasse"]
     assert cfg.object_usage()["strasse"] == ["seq-nacht"]
 
@@ -136,6 +149,10 @@ def test_host_setup_info_rocrail_uses_plus_one():
     assert "Adresse 3 (Adresse+1)" in signal[0]["text"]
     window = host_setup_info("fenster", None)
     assert "Haus" in window[0]["text"]
+    vehicle = host_setup_info("fahrzeug", 4)
+    assert vehicle[0]["text"].startswith("Signal:")
+    assert "Modi" in vehicle[0]["text"]
+    assert "Adresse 5 (Adresse+1)" in vehicle[0]["text"]
 
 
 def test_adapter_client_replaces_rocrail():
@@ -160,3 +177,51 @@ def test_unknown_controller_rejected():
         assert "unbekannter Controller" in str(exc)
     else:
         raise AssertionError("sollte fehlschlagen")
+
+
+def test_vehicle_anteil_and_default_modi():
+    from bidib2wled.config import VehicleConfig, default_vehicle_modi
+
+    cfg = AppConfig.model_validate(
+        {
+            "controller": [{"name": "dorf", "ip": "127.0.0.1", "leds": 40}],
+            "fahrzeuge": {
+                "lf": {
+                    "controller": "dorf",
+                    "kanaele": {
+                        "licht": {"leds": [1], "anteil": "rot", "art": "dauerlicht"},
+                        "blinker": {"leds": [1], "anteil": "g", "art": "warnblinker"},
+                        "rundum": {"leds": [2], "anteil": "alle", "art": "rundumlicht"},
+                    },
+                }
+            },
+        }
+    )
+    vehicle = cfg.fahrzeuge["lf"]
+    assert vehicle.kanaele["licht"].anteil == "r"
+    assert vehicle.kanaele["licht"].art == "dauer"
+    assert vehicle.kanaele["blinker"].art == "blinker"
+    assert vehicle.kanaele["rundum"].anteil == "rgb"
+    modi = vehicle.resolved_modi()
+    assert modi[0].name == "Aus"
+    assert modi[1].name == "Licht"
+    assert modi[2].name == "Warnblinker"
+    assert modi[3].name == "Einsatz"
+    assert "rundum" in modi[3].kanaele
+    assert default_vehicle_modi(vehicle.kanaele)[2].kanaele == ["licht", "blinker"]
+
+
+def test_vehicle_unknown_mode_channel_rejected():
+    try:
+        VehicleConfig.model_validate(
+            {
+                "controller": "dorf",
+                "kanaele": {"licht": {"leds": [0], "art": "dauer"}},
+                "modi": {1: {"name": "Licht", "kanaele": ["gibt-es-nicht"]}},
+            }
+        )
+    except Exception as exc:
+        assert "unbekannter Kanal" in str(exc)
+    else:
+        raise AssertionError("sollte fehlschlagen")
+

@@ -279,6 +279,7 @@ const LED_GROUPS = [
   { ctrl: "h-ctrl", out: "h-out", led: "h-leds" },
   { ctrl: "sig-ctrl", out: "sig-out", led: "sig-leds" },
   { ctrl: "sp-ctrl", out: "sp-out", led: "sp-leds" },
+  { ctrl: "v-ctrl", out: "v-out", led: "v-leds" },
 ];
 
 function controllerByName(name) {
@@ -320,7 +321,7 @@ function objectOwners(objId) {
 function currentLedExclude() {
   const ids = new Set();
   if (!editing.kind || !editing.id) return ids;
-  if (editing.kind === "lampe" || editing.kind === "spezial" || editing.kind === "signal") {
+  if (editing.kind === "lampe" || editing.kind === "spezial" || editing.kind === "signal" || editing.kind === "fahrzeug") {
     ids.add(editing.id);
     return ids;
   }
@@ -406,7 +407,7 @@ function syncLedDropdowns() {
 
 function fillCtrlSelects() {
   const names = (cfg.controller || []).map((c) => c.name).filter(Boolean);
-  for (const id of ["id-ctrl", "l-ctrl", "h-ctrl", "sig-ctrl", "sp-ctrl"]) {
+  for (const id of ["id-ctrl", "l-ctrl", "h-ctrl", "sig-ctrl", "sp-ctrl", "v-ctrl"]) {
     const el = document.getElementById(id);
     if (!el) continue;
     const current = el.value;
@@ -468,6 +469,7 @@ function groupMemberSections(excludeId) {
   add("Fenster", windows);
   add("Signale", Object.keys(cfg.signale || {}));
   add("Spezial", Object.keys(cfg.spezial || {}));
+  add("Fahrzeuge", Object.keys(cfg.fahrzeuge || {}));
   add("Gruppen", Object.keys(cfg.gruppen || {}));
   add("Sequenzen", Object.keys(cfg.sequenzen || {}));
   return sections;
@@ -712,6 +714,7 @@ async function refresh(force = false) {
   fillCtrlSelects();
   fillGroupMemberSelect();
   fillSequenceGroupSelect();
+  fillVehicleModeChannels();
   if (status.wizard && !wizardOpened) {
     wizardOpened = true;
     showTab("wizard");
@@ -914,6 +917,7 @@ const EDIT_META = {
   sequenz: { title: "s-title", create: "Sequenz anlegen", edit: "Sequenz bearbeiten", art: "art-sequenz", cancel: "s-cancel" },
   signal: { title: "sig-title", create: "Signal anlegen", edit: "Signal bearbeiten", art: "art-signal", cancel: "sig-cancel" },
   spezial: { title: "sp-title", create: "Spezial anlegen", edit: "Spezial bearbeiten", art: "art-spezial", cancel: "sp-cancel" },
+  fahrzeug: { title: "v-title", create: "Fahrzeug anlegen", edit: "Fahrzeug bearbeiten", art: "art-fahrzeug", cancel: "v-cancel" },
 };
 
 function setEditing(kind, id) {
@@ -993,6 +997,9 @@ function removeObjectFromConfig(cfg, id) {
     removed.push(id);
   } else if (cfg.spezial && cfg.spezial[id]) {
     delete cfg.spezial[id];
+    removed.push(id);
+  } else if (cfg.fahrzeuge && cfg.fahrzeuge[id]) {
+    delete cfg.fahrzeuge[id];
     removed.push(id);
   } else if (id.includes(".")) {
     const houseId = id.split(".")[0];
@@ -1128,6 +1135,117 @@ function loadSpecial(id, spec) {
   $("#art-spezial").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+function kanaeleToText(kanaele) {
+  return Object.entries(kanaele || {})
+    .map(([name, ch]) => `${name}:${(ch.leds || []).join(",")}:${ch.anteil || "rgb"}:${ch.farbe || DEFAULT_COLOR}:${ch.art || "dauer"}`)
+    .join("\n");
+}
+
+function parseKanaelLines(text) {
+  const lines = [];
+  for (const raw of String(text || "").split("\n")) {
+    const t = raw.trim();
+    if (!t) continue;
+    const parts = t.split(":");
+    const name = parts[0];
+    if (!name) continue;
+    lines.push({
+      name,
+      leds: parts[1] || "",
+      anteil: parts[2] || "rgb",
+      farbe: (parts[3] || DEFAULT_COLOR).trim(),
+      art: parts[4] || "dauer",
+    });
+  }
+  return lines;
+}
+
+function kanaelLinesToText(lines) {
+  return lines.map((ch) => `${ch.name}:${ch.leds}:${ch.anteil}:${ch.farbe}:${ch.art}`).join("\n");
+}
+
+function modiToText(modi) {
+  return Object.entries(modi || {})
+    .map(([n, m]) => `${n}:${m.name || n}:${(m.kanaele || []).join(",")}`)
+    .join("\n");
+}
+
+function parseModiLines(text) {
+  const lines = [];
+  for (const raw of String(text || "").split("\n")) {
+    const t = raw.trim();
+    if (!t) continue;
+    const [n, name, rest] = t.split(":");
+    lines.push({
+      n: n || "0",
+      name: name || n || "Aus",
+      kanaele: (rest || "").split(",").map((s) => s.trim()).filter(Boolean),
+    });
+  }
+  return lines;
+}
+
+function modiLinesToText(lines) {
+  return lines.map((m) => `${m.n}:${m.name}:${m.kanaele.join(",")}`).join("\n");
+}
+
+function defaultVehicleModi(lines) {
+  const dauer = lines.filter((ch) => ch.art === "dauer").map((ch) => ch.name);
+  const blinker = lines.filter((ch) => ch.art === "blinker").map((ch) => ch.name);
+  const einsatz = lines.filter((ch) => ["rundum", "blitz", "doppelblitz"].includes(ch.art)).map((ch) => ch.name);
+  const modi = [{ n: "0", name: "Aus", kanaele: [] }];
+  let next = 1;
+  if (dauer.length) {
+    modi.push({ n: String(next++), name: "Licht", kanaele: [...dauer] });
+  }
+  if (blinker.length) {
+    modi.push({ n: String(next++), name: "Warnblinker", kanaele: [...dauer, ...blinker] });
+  }
+  if (einsatz.length) {
+    modi.push({ n: String(next++), name: "Einsatz", kanaele: [...dauer, ...einsatz] });
+  }
+  if (modi.length === 1 && lines.length) {
+    modi.push({ n: "1", name: "An", kanaele: lines.map((ch) => ch.name) });
+  }
+  return modi;
+}
+
+function fillVehicleModeChannels(selected) {
+  const el = $("#v-mod-kan");
+  if (!el) return;
+  const keep = selected
+    ? new Set(selected.map(String))
+    : new Set([...el.selectedOptions].map((opt) => opt.value));
+  const names = parseKanaelLines($("#v-kanaele") && $("#v-kanaele").value).map((ch) => ch.name);
+  if (!names.length) {
+    el.innerHTML = '<option value="">Keine Kanäle übernommen</option>';
+    el.disabled = true;
+    return;
+  }
+  el.disabled = false;
+  el.innerHTML = names.map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join("");
+  [...el.options].forEach((opt) => {
+    opt.selected = keep.has(opt.value);
+  });
+}
+
+function loadVehicle(id, vehicle) {
+  $("#v-id").value = id;
+  $("#v-ctrl").value = vehicle.controller;
+  setEditing("fahrzeug", id);
+  fillOutputSelect("v-out", vehicle.controller);
+  fillLedSelect("v-leds", vehicle.controller, $("#v-out").value);
+  $("#v-kanaele").value = kanaeleToText(vehicle.kanaele);
+  const modi = vehicle.modi && Object.keys(vehicle.modi).length ? vehicle.modi : null;
+  $("#v-modi").value = modi ? modiToText(modi) : modiLinesToText(defaultVehicleModi(parseKanaelLines($("#v-kanaele").value)));
+  $("#v-blink").value = String(durationSeconds(vehicle.blink_periode, 0.75));
+  $("#v-rundum").value = String(durationSeconds(vehicle.rundum_schritt, 0.12));
+  fillVehicleModeChannels();
+  $("#v-ch-name").value = "";
+  setColorInput("v-farbe", DEFAULT_COLOR);
+  $("#art-fahrzeug").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 function startEdit(id) {
   const obj = (status.objects || []).find((item) => item.id === id);
   let kind = obj && obj.kind;
@@ -1145,6 +1263,7 @@ function startEdit(id) {
   if (kind === "sequenz" && cfg.sequenzen && cfg.sequenzen[id]) return loadSequence(id, cfg.sequenzen[id]);
   if (kind === "signal" && cfg.signale && cfg.signale[id]) return loadSignal(id, cfg.signale[id]);
   if (kind === "spezial" && cfg.spezial && cfg.spezial[id]) return loadSpecial(id, cfg.spezial[id]);
+  if (kind === "fahrzeug" && cfg.fahrzeuge && cfg.fahrzeuge[id]) return loadVehicle(id, cfg.fahrzeuge[id]);
   notify("Objekt konnte nicht geladen werden.", false);
 }
 
@@ -1180,6 +1299,17 @@ function cancelEdit(kind) {
     setColorInput("sp-farbe", DEFAULT_COLOR);
     if ($("#sp-fx")) $("#sp-fx").selectedIndex = 0;
     if ($("#sp-pal")) $("#sp-pal").selectedIndex = 0;
+  } else if (kind === "fahrzeug") {
+    $("#v-id").value = "";
+    $("#v-ch-name").value = "";
+    $("#v-kanaele").value = "";
+    $("#v-modi").value = "";
+    $("#v-mod-n").value = "0";
+    $("#v-mod-name").value = "";
+    $("#v-blink").value = "0.75";
+    $("#v-rundum").value = "0.12";
+    setColorInput("v-farbe", DEFAULT_COLOR);
+    fillVehicleModeChannels([]);
   }
   setEditing(null, null);
 }
@@ -1270,6 +1400,7 @@ $("#g-cancel").onclick = () => cancelEdit("gruppe");
 $("#s-cancel").onclick = () => cancelEdit("sequenz");
 $("#sig-cancel").onclick = () => cancelEdit("signal");
 $("#sp-cancel").onclick = () => cancelEdit("spezial");
+$("#v-cancel").onclick = () => cancelEdit("fahrzeug");
 
 $("#l-add").onclick = () => {
   const updating = editing.kind === "lampe" && editing.id;
@@ -1449,6 +1580,99 @@ $("#sp-add").onclick = () => {
     if (updating) retargetRefs(next, editing.id, id);
     await api("/api/config", { method: "PUT", body: JSON.stringify(next) });
     await afterSave("spezial");
+  });
+};
+
+$("#v-kanaele").addEventListener("input", () => fillVehicleModeChannels());
+
+$("#v-ch-add").onclick = () => {
+  const name = $("#v-ch-name").value.trim();
+  const leds = toGlobals($("#v-ctrl").value, $("#v-out").value, selectedLocals("v-leds"));
+  const farbe = parseHex($("#v-farbe").value) || DEFAULT_COLOR;
+  const anteil = $("#v-anteil").value || "rgb";
+  const art = $("#v-art").value || "dauer";
+  if (!name) {
+    notify("Bitte einen Kanalnamen vergeben.", false);
+    return;
+  }
+  if (!leds.length) {
+    notify("Bitte mindestens eine LED wählen.", false);
+    return;
+  }
+  const lines = parseKanaelLines($("#v-kanaele").value);
+  const idx = lines.findIndex((ch) => ch.name === name);
+  const existed = idx >= 0;
+  runAction(existed ? "Kanal aktualisiert" : "Kanal übernommen", () => {
+    const entry = { name, leds: leds.join(","), anteil, farbe, art };
+    if (idx >= 0) lines[idx] = entry;
+    else lines.push(entry);
+    $("#v-kanaele").value = kanaelLinesToText(lines);
+    fillVehicleModeChannels();
+  });
+};
+
+$("#v-mod-add").onclick = () => {
+  const n = $("#v-mod-n").value;
+  const name = $("#v-mod-name").value.trim() || String(n);
+  const kanaele = selectedMembers("v-mod-kan");
+  const lines = parseModiLines($("#v-modi").value);
+  const idx = lines.findIndex((m) => String(m.n) === String(n));
+  runAction(idx >= 0 ? "Modus aktualisiert" : "Modus übernommen", () => {
+    const entry = { n: String(n), name, kanaele };
+    if (idx >= 0) lines[idx] = entry;
+    else lines.push(entry);
+    lines.sort((a, b) => Number(a.n) - Number(b.n));
+    $("#v-modi").value = modiLinesToText(lines);
+  });
+};
+
+$("#v-mod-default").onclick = () => {
+  const channels = parseKanaelLines($("#v-kanaele").value);
+  if (!channels.length) {
+    notify("Bitte zuerst Kanäle übernehmen.", false);
+    return;
+  }
+  $("#v-modi").value = modiLinesToText(defaultVehicleModi(channels));
+  notify("Standard-Modi erzeugt", true);
+};
+
+$("#v-add").onclick = () => {
+  const updating = editing.kind === "fahrzeug" && editing.id;
+  runAction(updating ? "Fahrzeug gespeichert" : "Fahrzeug angelegt", async () => {
+    const id = $("#v-id").value.trim();
+    if (!id) throw new Error("Bitte eine ID vergeben.");
+    const kanaele = {};
+    for (const line of parseKanaelLines($("#v-kanaele").value)) {
+      kanaele[line.name] = {
+        leds: parseLeds(line.leds),
+        anteil: line.anteil || "rgb",
+        farbe: parseHex(line.farbe) || DEFAULT_COLOR,
+        art: line.art || "dauer",
+      };
+    }
+    if (!Object.keys(kanaele).length) throw new Error("Bitte mindestens einen Kanal übernehmen.");
+    let modiLines = parseModiLines($("#v-modi").value);
+    if (!modiLines.length) modiLines = defaultVehicleModi(parseKanaelLines($("#v-kanaele").value));
+    const modi = {};
+    for (const line of modiLines) {
+      modi[Number(line.n)] = { name: line.name, kanaele: line.kanaele };
+    }
+    const blink = durationSeconds($("#v-blink").value, NaN);
+    const rundum = durationSeconds($("#v-rundum").value, NaN);
+    if (!Number.isFinite(blink) || blink <= 0) throw new Error("Blink-Periode muss größer als 0 sein.");
+    if (!Number.isFinite(rundum) || rundum <= 0) throw new Error("Rundum-Schritt muss größer als 0 sein.");
+    const next = await api("/api/config");
+    next.fahrzeuge = next.fahrzeuge || {};
+    replaceKey(next.fahrzeuge, updating ? editing.id : null, id, {
+      controller: $("#v-ctrl").value,
+      kanaele,
+      modi,
+      blink_periode: durationToken(blink),
+      rundum_schritt: durationToken(rundum),
+    });
+    if (updating) retargetRefs(next, editing.id, id);
+    await api("/api/config", { method: "PUT", body: JSON.stringify(next) });
+    await afterSave("fahrzeug");
   });
 };
 

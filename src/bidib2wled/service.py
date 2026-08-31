@@ -82,6 +82,7 @@ class Service:
             "sequenz": "Sequenz",
             "signal": "Signal",
             "spezial": "Spezial",
+            "fahrzeug": "Fahrzeug",
         }
         acc_map = self.bidib.accessory_map()
         acc_rev = {obj: anum for anum, obj in acc_map.items()}
@@ -107,6 +108,10 @@ class Service:
             if kind == "signal":
                 begriffe = self.config.signale[obj_id].begriffe
                 item["states"] = [{"value": key, "name": val.name} for key, val in sorted(begriffe.items())]
+                item["on"] = None
+            elif kind == "fahrzeug":
+                modi = self.config.fahrzeuge[obj_id].resolved_modi()
+                item["states"] = [{"value": key, "name": val.name} for key, val in sorted(modi.items())]
                 item["on"] = None
             objects.append(item)
         pending = None
