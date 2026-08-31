@@ -38,6 +38,13 @@ class AddressBody(BaseModel):
     address: int = Field(ge=0, le=255)
 
 
+class InsertLedsBody(BaseModel):
+    controller: str
+    output: int = 0
+    after: int = Field(ge=-1, description="Lokaler 0-basierter Index der LED, nach der eingefügt wird")
+    count: int = Field(ge=1, le=255)
+
+
 def create_app(service: "Service") -> FastAPI:
     app = FastAPI(title="BiDiB2WLED", version="0.1.0")
 
@@ -108,6 +115,15 @@ def create_app(service: "Service") -> FastAPI:
     async def set_address(body: AddressBody) -> dict[str, Any]:
         try:
             return await service.set_object_address(body.object_id, body.address)
+        except Exception as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/leds/insert")
+    async def insert_leds(body: InsertLedsBody) -> dict[str, Any]:
+        try:
+            result = await service.insert_leds(body.controller, body.output, body.after, body.count)
+            result["status"] = service.status()
+            return result
         except Exception as exc:
             raise HTTPException(400, str(exc)) from exc
 

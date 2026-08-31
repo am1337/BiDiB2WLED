@@ -5,63 +5,11 @@ from __future__ import annotations
 import hashlib
 
 from bidib2wled.config import VehicleConfig
+from bidib2wled.pixels import clear_components, expand_anteil, set_components
 from bidib2wled.wled import rgb_from_hex
 
 # Abweichung der Blinkfrequenz je Fahrzeug, damit mehrere Modelle nicht im Takt laufen.
 _PERIOD_SPREAD = 0.22
-
-
-def expand_anteil(anteil: str) -> tuple[str, ...]:
-    key = (anteil or "rgb").strip().lower()
-    if key == "r":
-        return ("r",)
-    if key == "g":
-        return ("g",)
-    if key == "b":
-        return ("b",)
-    return ("r", "g", "b")
-
-
-def component_value(color: tuple[int, int, int], component: str) -> int:
-    """Helligkeit für einen WS2811-Pin. Weiß und einfarbig funktionieren beide."""
-    cr, cg, cb = color
-    if component == "r" and cr:
-        return cr
-    if component == "g" and cg:
-        return cg
-    if component == "b" and cb:
-        return cb
-    return max(cr, cg, cb)
-
-
-def set_components(
-    pixel: tuple[int, int, int],
-    components: tuple[str, ...],
-    color: tuple[int, int, int],
-) -> tuple[int, int, int]:
-    red, green, blue = pixel
-    for component in components:
-        value = component_value(color, component)
-        if component == "r":
-            red = value
-        elif component == "g":
-            green = value
-        else:
-            blue = value
-    return (red, green, blue)
-
-
-def clear_components(
-    pixel: tuple[int, int, int], components: tuple[str, ...] | set[str]
-) -> tuple[int, int, int]:
-    red, green, blue = pixel
-    if "r" in components:
-        red = 0
-    if "g" in components:
-        green = 0
-    if "b" in components:
-        blue = 0
-    return (red, green, blue)
 
 
 def rundum_steps(leds: list[int], anteil: str) -> list[tuple[int, tuple[str, ...]]]:

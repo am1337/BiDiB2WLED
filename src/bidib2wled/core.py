@@ -10,6 +10,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from bidib2wled.config import AppConfig
+from bidib2wled.pixels import clear_components, ensure_pixel, expand_anteil, set_components
 from bidib2wled.vehicles import apply_vehicle_to_pixels, vehicle_has_animation
 from bidib2wled.wled import ActiveEffect, WledPool, rgb_from_hex
 
@@ -124,16 +125,16 @@ class Engine:
 
     async def _switch_lamp(self, lamp_id: str, aspect: int) -> None:
         lamp = self.config.lampen[lamp_id]
-        color = rgb_from_hex(lamp.farbe, lamp.helligkeit) if aspect else (0, 0, 0)
-        await self._set_leds(lamp.controller, {idx: color for idx in lamp.leds})
+        color = rgb_from_hex(lamp.farbe, lamp.helligkeit) if aspect else None
+        await self._apply_channels(lamp.controller, [(lamp.leds, lamp.anteil, color)])
         self.state_of(lamp_id).aspect = 1 if aspect else 0
 
     async def _switch_window(self, object_id: str, aspect: int) -> None:
         house_id, window_id = object_id.split(".", 1)
         house = self.config.haeuser[house_id]
         window = house.fenster[window_id]
-        color = rgb_from_hex(window.farbe, window.helligkeit) if aspect else (0, 0, 0)
-        await self._set_leds(house.controller, {idx: color for idx in window.leds})
+        color = rgb_from_hex(window.farbe, window.helligkeit) if aspect else None
+        await self._apply_channels(house.controller, [(window.leds, window.anteil, color)])
         self.state_of(object_id).aspect = 1 if aspect else 0
 
     async def _switch_house(self, house_id: str, aspect: int) -> None:
@@ -155,16 +156,16 @@ class Engine:
                     await asyncio.sleep(random.uniform(*delay) if delay[1] else 0)
                 first = False
                 color = rgb_from_hex(window.farbe, window.helligkeit)
-                await self._set_leds(house.controller, {idx: color for idx in window.leds})
+                await self._apply_channels(house.controller, [(window.leds, window.anteil, color)])
                 self.state_of(f"{house_id}.{window_id}").aspect = 1
             off_windows = [item for item in windows if item not in chosen]
-            updates: dict[int, tuple[int, int, int]] = {}
-            for window_id, window in off_windows:
-                for idx in window.leds:
-                    updates[idx] = (0, 0, 0)
-                self.state_of(f"{house_id}.{window_id}").aspect = 0
-            if updates:
-                await self._set_leds(house.controller, updates)
+            if off_windows:
+                await self._apply_channels(
+                    house.controller,
+                    [(window.leds, window.anteil, None) for _, window in off_windows],
+                )
+                for window_id, _window in off_windows:
+                    self.state_of(f"{house_id}.{window_id}").aspect = 0
         else:
             order = list(reversed(windows))
             if house.einschalten == "zufaellig":
@@ -175,7 +176,7 @@ class Engine:
                 if not first and house.einschalten != "sofort":
                     await asyncio.sleep(random.uniform(*delay) if delay[1] else 0)
                 first = False
-                await self._set_leds(house.controller, {idx: (0, 0, 0) for idx in window.leds})
+                await self._apply_channels(house.controller, [(window.leds, window.anteil, None)])
                 self.state_of(f"{house_id}.{window_id}").aspect = 0
 
     async def _switch_group(self, group_id: str, aspect: int) -> None:
@@ -208,16 +209,16 @@ class Engine:
 
     async def _switch_signal(self, signal_id: str, aspect: int) -> None:
         signal = self.config.signale[signal_id]
-        all_leds: set[int] = set()
-        for begriff in signal.begriffe.values():
-            all_leds.update(begriff.leds)
-        updates = {idx: (0, 0, 0) for idx in all_leds}
         begriff = signal.begriffe.get(aspect)
         if begriff is None:
             raise ValueError(f"Signal {signal_id}: Aspekt {aspect} unbekannt")
+        assignments: list[tuple[list[int], str, tuple[int, int, int] | None]] = []
+        for other in signal.begriffe.values():
+            for idx in other.leds:
+                assignments.append(([idx], other.anteil_of(idx), None))
         for idx, color in begriff.leds.items():
-            updates[idx] = rgb_from_hex(color, 255)
-        await self._set_leds(signal.controller, updates)
+            assignments.append(([idx], begriff.anteil_of(idx), rgb_from_hex(color, 255)))
+        await self._apply_channels(signal.controller, assignments)
 
     async def _switch_special(self, object_id: str, aspect: int) -> None:
         spec = self.config.spezial[object_id]
@@ -240,7 +241,7 @@ class Engine:
             )
         else:
             await device.clear_effect(object_id)
-            await self._set_leds(spec.controller, {idx: (0, 0, 0) for idx in spec.leds})
+            await self._apply_channels(spec.controller, [(spec.leds, spec.anteil, None)], force=True)
         self.state_of(object_id).aspect = 1 if aspect else 0
 
     async def _switch_vehicle(self, vehicle_id: str, aspect: int) -> None:
@@ -315,6 +316,35 @@ class Engine:
                     updates[index] = working[index]
             if updates:
                 await self._set_leds(controller, updates)
+
+    async def _apply_channels(
+        self,
+        controller: str,
+        assignments: list[tuple[list[int], str, tuple[int, int, int] | None]],
+        force: bool = False,
+    ) -> None:
+        """Setzt oder löscht WS2811-Anteile, ohne andere Kanäle desselben Pixels zu überschreiben."""
+        device = self.pool.get(controller)
+        if device is None:
+            raise KeyError(f"Controller {controller} nicht verbunden")
+        working = list(device.pixels)
+        touched: set[int] = set()
+        for leds, anteil, color in assignments:
+            components = expand_anteil(anteil)
+            for idx in leds:
+                ensure_pixel(working, idx)
+                touched.add(idx)
+                if color is None:
+                    working[idx] = clear_components(working[idx], components)
+                else:
+                    working[idx] = set_components(working[idx], components, color)
+        updates: dict[int, tuple[int, int, int]] = {}
+        for idx in touched:
+            previous = device.pixels[idx] if idx < len(device.pixels) else (0, 0, 0)
+            if force or working[idx] != previous:
+                updates[idx] = working[idx]
+        if updates:
+            await self._set_leds(controller, updates)
 
     async def _set_leds(self, controller: str, updates: dict[int, tuple[int, int, int]]) -> None:
         device = self.pool.get(controller)

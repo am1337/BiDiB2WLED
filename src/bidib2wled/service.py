@@ -154,6 +154,7 @@ class Service:
             "objects": objects,
             "usage": {
                 "leds": self.config.led_usage(),
+                "channels": self.config.led_channel_usage(),
                 "objects": self.config.object_usage(),
             },
         }
@@ -285,6 +286,36 @@ class Service:
         self._save()
         self.bidib.configure(self.config)
         return self.status()
+
+    async def insert_leds(self, controller: str, output: int, after: int, count: int) -> dict:
+        """Fügt `count` LEDs nach lokaler LED `after` (0-basiert) ein und schiebt Folgeadressen."""
+        ctrl = self.config.controller_by_name(controller)
+        if ctrl is None:
+            raise ValueError(f"Unbekannter Controller: {controller}")
+        device = self.pool.get(controller)
+        wled_count = (device.info.led_count if device and device.info.led_count else None) or ctrl.leds or 0
+        outputs = [item.to_dict() for item in device.info.outputs] if device and device.info.outputs else []
+        if not outputs:
+            outputs = [{"id": 0, "start": 0, "len": wled_count}]
+        out = next((item for item in outputs if int(item["id"]) == int(output)), None)
+        if out is None:
+            raise ValueError(f"Ausgang {output} existiert nicht")
+        length = int(out["len"] or 0)
+        start = int(out["start"] or 0)
+        if after < -1 or (length and after >= length):
+            raise ValueError("LED liegt nicht auf diesem Ausgang")
+        first_shifted = start + after + 1
+        shifted = self.config.shift_controller_leds(controller, first_shifted, count, int(wled_count))
+        self._save()
+        self.engine.load(self.config)
+        return {
+            "ok": True,
+            "controller": controller,
+            "first_shifted": first_shifted,
+            "count": count,
+            "shifted": shifted,
+            "wled_leds": int(wled_count),
+        }
 
     async def apply_config(self, config: AppConfig) -> None:
         old_port = self.config.adapter.netbidib.port

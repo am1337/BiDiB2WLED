@@ -84,6 +84,58 @@ async def test_lamp_on_off(engine):
 
 
 @pytest.mark.asyncio
+async def test_lamp_anteil_keeps_other_channels(engine):
+    from bidib2wled.config import LampConfig
+
+    engine.config.lampen["rot-kanal"] = LampConfig(
+        controller="dorf", leds=[4], farbe="FF0000", anteil="r"
+    )
+    engine.config.lampen["gruen-kanal"] = LampConfig(
+        controller="dorf", leds=[4], farbe="00FF00", anteil="g"
+    )
+    engine.pool.get("dorf").pixels[4] = (9, 9, 9)
+    await engine.switch("rot-kanal", 1)
+    pix = engine.pool.get("dorf").pixels[4]
+    assert pix[0] > 0
+    assert pix[1] == 9
+    await engine.switch("gruen-kanal", 1)
+    pix = engine.pool.get("dorf").pixels[4]
+    assert pix[0] > 0 and pix[1] > 0
+    await engine.switch("rot-kanal", 0)
+    pix = engine.pool.get("dorf").pixels[4]
+    assert pix[0] == 0
+    assert pix[1] > 0
+
+
+@pytest.mark.asyncio
+async def test_window_anteil_keeps_other_channels(engine):
+    from bidib2wled.config import HouseConfig
+
+    engine.config.haeuser["chip"] = HouseConfig.model_validate(
+        {
+            "controller": "dorf",
+            "einschalten": "sofort",
+            "nacht-wahrscheinlichkeit": 1,
+            "fenster": {
+                "rot": {"leds": [7], "farbe": "FF0000", "anteil": "r"},
+                "blau": {"leds": [7], "farbe": "0000FF", "anteil": "b"},
+            },
+        }
+    )
+    await engine.switch("chip.rot", 1)
+    pix = engine.pool.get("dorf").pixels[7]
+    assert pix[0] > 0
+    assert pix[2] == 0
+    await engine.switch("chip.blau", 1)
+    pix = engine.pool.get("dorf").pixels[7]
+    assert pix[0] > 0 and pix[2] > 0
+    await engine.switch("chip.rot", 0)
+    pix = engine.pool.get("dorf").pixels[7]
+    assert pix[0] == 0
+    assert pix[2] > 0
+
+
+@pytest.mark.asyncio
 async def test_house_and_window(engine):
     await engine.switch("haus-a", 1)
     pix = engine.pool.get("dorf").pixels

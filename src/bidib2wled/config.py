@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
 _DURATION_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*s?\s*$", re.I)
 _MAC_HEX_RE = re.compile(r"[^0-9a-fA-F]")
@@ -47,12 +47,38 @@ def parse_delay_range(value: Any) -> tuple[float, float]:
     return (seconds, seconds)
 
 
+_ANTEIL_ALIASES = {
+    "r": "r",
+    "rot": "r",
+    "red": "r",
+    "g": "g",
+    "gruen": "g",
+    "grün": "g",
+    "green": "g",
+    "b": "b",
+    "blau": "b",
+    "blue": "b",
+    "rgb": "rgb",
+    "alle": "rgb",
+    "all": "rgb",
+}
+
+
+def parse_anteil(value: Any) -> str:
+    raw = str(value or "rgb").strip().lower()
+    mapped = _ANTEIL_ALIASES.get(raw)
+    if mapped is None:
+        raise ValueError(f"anteil muss r, g, b oder rgb sein: {value!r}")
+    return mapped
+
+
 class LampConfig(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     controller: str
     leds: list[int] = Field(min_length=1)
     farbe: str = "FFFFFF"
     helligkeit: int = Field(default=180, ge=0, le=255)
+    anteil: Literal["r", "g", "b", "rgb"] = "rgb"
 
     @field_validator("farbe")
     @classmethod
@@ -62,17 +88,28 @@ class LampConfig(BaseModel):
             raise ValueError(f"Farbe muss RRGGBB sein: {value!r}")
         return cleaned
 
+    @field_validator("anteil", mode="before")
+    @classmethod
+    def _anteil(cls, value: Any) -> str:
+        return parse_anteil(value)
+
 
 class FensterConfig(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     leds: list[int] = Field(min_length=1)
     farbe: str = "FFFFFF"
     helligkeit: int = Field(default=180, ge=0, le=255)
+    anteil: Literal["r", "g", "b", "rgb"] = "rgb"
 
     @field_validator("farbe")
     @classmethod
     def _color(cls, value: str) -> str:
         return LampConfig._color(value)
+
+    @field_validator("anteil", mode="before")
+    @classmethod
+    def _anteil(cls, value: Any) -> str:
+        return parse_anteil(value)
 
 
 class HouseConfig(BaseModel):
@@ -105,11 +142,24 @@ class SequenceConfig(BaseModel):
 class SignalAspectConfig(BaseModel):
     name: str
     leds: dict[int, str] = Field(default_factory=dict)
+    anteile: dict[int, str] = Field(default_factory=dict)
 
     @field_validator("leds")
     @classmethod
     def _colors(cls, value: dict[int, str]) -> dict[int, str]:
         return {int(idx): LampConfig._color(color) for idx, color in value.items()}
+
+    @field_validator("anteile")
+    @classmethod
+    def _anteile(cls, value: dict[int, str]) -> dict[int, str]:
+        return {int(idx): parse_anteil(anteil) for idx, anteil in value.items()}
+
+    def anteil_of(self, led: int) -> str:
+        return self.anteile.get(int(led), "rgb")
+
+    @field_serializer("anteile")
+    def _dump_anteile(self, value: dict[int, str]) -> dict[int, str] | None:
+        return value or None
 
 
 class SignalConfig(BaseModel):
@@ -119,21 +169,6 @@ class SignalConfig(BaseModel):
 
 VEHICLE_ARTS = ("dauer", "blinker", "rundum", "blitz", "doppelblitz")
 VEHICLE_EINSATZ_ARTS = ("rundum", "blitz", "doppelblitz")
-_ANTEIL_ALIASES = {
-    "r": "r",
-    "rot": "r",
-    "red": "r",
-    "g": "g",
-    "gruen": "g",
-    "grün": "g",
-    "green": "g",
-    "b": "b",
-    "blau": "b",
-    "blue": "b",
-    "rgb": "rgb",
-    "alle": "rgb",
-    "all": "rgb",
-}
 _ART_ALIASES = {
     "dauerlicht": "dauer",
     "warnblinker": "blinker",
@@ -162,11 +197,7 @@ class VehicleChannelConfig(BaseModel):
     @field_validator("anteil", mode="before")
     @classmethod
     def _anteil(cls, value: Any) -> str:
-        raw = str(value or "rgb").strip().lower()
-        mapped = _ANTEIL_ALIASES.get(raw)
-        if mapped is None:
-            raise ValueError(f"anteil muss r, g, b oder rgb sein: {value!r}")
-        return mapped
+        return parse_anteil(value)
 
     @field_validator("art", mode="before")
     @classmethod
@@ -256,11 +287,17 @@ class SpecialConfig(BaseModel):
     intensitaet: int = Field(default=128, ge=0, le=255)
     farbe: str = "FFFFFF"
     helligkeit: int | None = Field(default=None, ge=1, le=255)
+    anteil: Literal["r", "g", "b", "rgb"] = "rgb"
 
     @field_validator("farbe")
     @classmethod
     def _color(cls, value: str) -> str:
         return LampConfig._color(value)
+
+    @field_validator("anteil", mode="before")
+    @classmethod
+    def _anteil(cls, value: Any) -> str:
+        return parse_anteil(value)
 
 
 class ControllerConfig(BaseModel):
@@ -506,29 +543,110 @@ class AppConfig(BaseModel):
 
     def led_usage(self) -> dict[str, dict[str, list[str]]]:
         """Controller → LED-Index (als String) → Objekt-IDs, die diese LED nutzen."""
-        usage: dict[str, dict[str, list[str]]] = {}
+        return {ctrl: {led: list(info["objects"]) for led, info in leds.items()} for ctrl, leds in self._led_map().items()}
 
-        def add(controller: str, leds, obj_id: str) -> None:
+    def led_channel_usage(self) -> dict[str, dict[str, dict[str, list[str]]]]:
+        """Controller → LED-Index → Anteil (r/g/b) → Objekt-IDs."""
+        return {
+            ctrl: {led: {comp: list(owners) for comp, owners in info["channels"].items()} for led, info in leds.items()}
+            for ctrl, leds in self._led_map().items()
+        }
+
+    def _led_map(self) -> dict[str, dict[str, dict[str, object]]]:
+        from bidib2wled.pixels import expand_anteil
+
+        usage: dict[str, dict[str, dict[str, object]]] = {}
+
+        def add(controller: str, leds, obj_id: str, anteil: str = "rgb") -> None:
             bucket = usage.setdefault(controller, {})
             for led in leds:
                 key = str(int(led))
-                bucket.setdefault(key, []).append(obj_id)
+                entry = bucket.setdefault(key, {"objects": [], "channels": {"r": [], "g": [], "b": []}})
+                objects: list[str] = entry["objects"]  # type: ignore[assignment]
+                channels: dict[str, list[str]] = entry["channels"]  # type: ignore[assignment]
+                if obj_id not in objects:
+                    objects.append(obj_id)
+                for component in expand_anteil(anteil):
+                    owners = channels.setdefault(component, [])
+                    if obj_id not in owners:
+                        owners.append(obj_id)
 
         for lamp_id, lamp in self.lampen.items():
-            add(lamp.controller, lamp.leds, lamp_id)
+            add(lamp.controller, lamp.leds, lamp_id, lamp.anteil)
         for house_id, house in self.haeuser.items():
             for window_id, window in house.fenster.items():
-                add(house.controller, window.leds, f"{house_id}.{window_id}")
+                add(house.controller, window.leds, f"{house_id}.{window_id}", window.anteil)
         for signal_id, signal in self.signale.items():
-            leds: set[int] = set()
             for begriff in signal.begriffe.values():
-                leds.update(begriff.leds)
-            add(signal.controller, leds, signal_id)
+                for idx in begriff.leds:
+                    add(signal.controller, [idx], signal_id, begriff.anteil_of(idx))
         for spec_id, spec in self.spezial.items():
-            add(spec.controller, spec.leds, spec_id)
+            add(spec.controller, spec.leds, spec_id, spec.anteil)
         for vehicle_id, vehicle in self.fahrzeuge.items():
-            add(vehicle.controller, vehicle.all_leds(), vehicle_id)
+            for channel in vehicle.kanaele.values():
+                add(vehicle.controller, channel.leds, vehicle_id, channel.anteil)
         return usage
+
+    def max_led_index(self, controller: str) -> int:
+        """Höchster verwendeter LED-Index auf dem Controller, oder -1."""
+        highest = -1
+        for key in self._led_map().get(controller, {}):
+            highest = max(highest, int(key))
+        return highest
+
+    def shift_controller_leds(self, controller: str, first_shifted: int, count: int, wled_count: int) -> int:
+        """Schiebt alle LED-Adressen ab `first_shifted` um `count`. Prüft gegen die WLED-Länge."""
+        from bidib2wled.pixels import shift_index_map, shift_led_list
+
+        if count < 1:
+            raise ValueError("Anzahl muss mindestens 1 sein")
+        if first_shifted < 0:
+            raise ValueError("Ungültige Einfügeposition")
+        if wled_count < 1:
+            raise ValueError("WLED-LED-Anzahl unbekannt – Controller zuerst übernehmen")
+        current_max = self.max_led_index(controller)
+        shifted_max = current_max + count if current_max >= first_shifted else current_max
+        last_new = first_shifted + count - 1
+        need = max(shifted_max, last_new) + 1
+        if need > wled_count:
+            raise ValueError(
+                f"Nach dem Einfügen wären {need} LEDs nötig, WLED meldet aber nur {wled_count}. "
+                f"Zuerst in WLED die LED-Anzahl auf mindestens {need} erhöhen."
+            )
+        changed = 0
+        for lamp in self.lampen.values():
+            if lamp.controller != controller:
+                continue
+            lamp.leds, n = shift_led_list(lamp.leds, first_shifted, count)
+            changed += n
+        for house in self.haeuser.values():
+            if house.controller != controller:
+                continue
+            for window in house.fenster.values():
+                window.leds, n = shift_led_list(window.leds, first_shifted, count)
+                changed += n
+        for signal in self.signale.values():
+            if signal.controller != controller:
+                continue
+            for begriff in signal.begriffe.values():
+                new_leds, n = shift_index_map(dict(begriff.leds), first_shifted, count)
+                begriff.leds = {int(k): str(v) for k, v in new_leds.items()}
+                changed += n
+                if begriff.anteile:
+                    new_anteile, _ = shift_index_map(dict(begriff.anteile), first_shifted, count)
+                    begriff.anteile = {int(k): str(v) for k, v in new_anteile.items()}
+        for spec in self.spezial.values():
+            if spec.controller != controller:
+                continue
+            spec.leds, n = shift_led_list(spec.leds, first_shifted, count)
+            changed += n
+        for vehicle in self.fahrzeuge.values():
+            if vehicle.controller != controller:
+                continue
+            for channel in vehicle.kanaele.values():
+                channel.leds, n = shift_led_list(channel.leds, first_shifted, count)
+                changed += n
+        return changed
 
     def object_usage(self) -> dict[str, list[str]]:
         """Objekt-ID → Gruppen/Sequenzen, die das Objekt referenzieren."""

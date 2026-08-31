@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>BiDiB2WLED</title>
-  <link rel="stylesheet" href="/static/style.css?v=17">
+  <link rel="stylesheet" href="/static/style.css?v=18">
 </head>
 <body>
   <header>
@@ -76,6 +76,22 @@
           <button id="id-go">Diese LED blinken lassen</button>
         </div>
       </article>
+      <article>
+        <h2>4. LEDs in den Bus einfügen</h2>
+        <p>
+          Wenn du LEDs in die Kette gelötet hast: zuerst in WLED die LED-Anzahl erhöhen,
+          dann hier die Stelle angeben (z. B. nach LED 5, wenn drei neue zwischen alter LED 5 und 6 sitzen).
+          Alle Objekt-Adressen ab der nächsten LED werden hochgezählt.
+          Mehr LEDs als in WLED konfiguriert sind, lassen sich nicht anlegen.
+        </p>
+        <div class="row wrap">
+          <label>Controller <select id="ins-ctrl"></select></label>
+          <label>Ausgang <select id="ins-out"></select></label>
+          <label>Nach LED <select id="ins-after"></select></label>
+          <label>Neue LEDs <input id="ins-count" type="number" min="1" step="1" value="1"></label>
+          <button type="button" id="ins-go">Einfügen und Adressen anpassen</button>
+        </div>
+      </article>
     </section>
 
     <section id="tab-objects" class="hidden">
@@ -86,6 +102,14 @@
           <label>Controller <select id="l-ctrl"></select></label>
           <label>Ausgang <select id="l-out"></select></label>
           <label>LEDs (Strg für mehrere) <select id="l-leds" multiple size="6"></select></label>
+          <label>WS2811-Anteil
+            <select id="l-anteil">
+              <option value="rgb">alle (RGB)</option>
+              <option value="r">nur Rot</option>
+              <option value="g">nur Grün</option>
+              <option value="b">nur Blau</option>
+            </select>
+          </label>
           <label>Farbe
             <span class="color-field">
               <span class="color-swatch" title="Farbe wählen"></span>
@@ -112,6 +136,14 @@
           <input id="h-win-name" placeholder="Fenstername wohnzimmer">
           <label>Ausgang <select id="h-out"></select></label>
           <label>LEDs <select id="h-leds" multiple size="6"></select></label>
+          <label>WS2811-Anteil
+            <select id="h-anteil">
+              <option value="rgb">alle (RGB)</option>
+              <option value="r">nur Rot</option>
+              <option value="g">nur Grün</option>
+              <option value="b">nur Blau</option>
+            </select>
+          </label>
           <label>Farbe
             <span class="color-field">
               <span class="color-swatch" title="Farbe wählen"></span>
@@ -165,6 +197,14 @@
           <input id="sig-asp-n" type="number" min="0" value="0" title="Begriff-Nummer" placeholder="Nr.">
           <input id="sig-asp-name" placeholder="Halt">
           <label>LEDs <select id="sig-leds" multiple size="6"></select></label>
+          <label>WS2811-Anteil
+            <select id="sig-anteil">
+              <option value="rgb">alle (RGB)</option>
+              <option value="r">nur Rot</option>
+              <option value="g">nur Grün</option>
+              <option value="b">nur Blau</option>
+            </select>
+          </label>
           <label>Farbe
             <span class="color-field">
               <span class="color-swatch" title="Farbe wählen"></span>
@@ -181,12 +221,20 @@
       </article>
       <article id="art-spezial">
         <h2 id="sp-title">Spezial anlegen</h2>
-        <p>WLED-Effekt auf den gewählten LEDs. Zusammenhängende LEDs bilden ein Segment. Steuerung schaltet nur ein und aus. Bereits verwendete LEDs sind in den Listen markiert.</p>
+        <p>WLED-Effekt auf den gewählten LEDs. Zusammenhängende LEDs bilden ein Segment. Steuerung schaltet nur ein und aus. Bereits verwendete LEDs sind in den Listen markiert. WLED-Effekte wirken immer auf das ganze Pixel; der Anteil gilt beim Ausschalten.</p>
         <div class="row wrap">
           <input id="sp-id" placeholder="ID kamin-feuer">
           <label>Controller <select id="sp-ctrl"></select></label>
           <label>Ausgang <select id="sp-out"></select></label>
           <label>LEDs (Strg für mehrere) <select id="sp-leds" multiple size="6"></select></label>
+          <label>WS2811-Anteil
+            <select id="sp-anteil">
+              <option value="rgb">alle (RGB)</option>
+              <option value="r">nur Rot</option>
+              <option value="g">nur Grün</option>
+              <option value="b">nur Blau</option>
+            </select>
+          </label>
         </div>
         <div class="row wrap">
           <label>Effekt <select id="sp-fx"></select></label>
@@ -300,6 +348,6 @@
       <label>B <input id="cp-b" type="number" min="0" max="255"></label>
     </div>
   </div>
-  <script src="/static/app.js?v=20"></script>
+  <script src="/static/app.js?v=22"></script>
 </body>
 </html>

@@ -1,3 +1,5 @@
+import pytest
+
 from bidib2wled.config import (
     AppConfig,
     ControllerConfig,
@@ -224,4 +226,113 @@ def test_vehicle_unknown_mode_channel_rejected():
         assert "unbekannter Kanal" in str(exc)
     else:
         raise AssertionError("sollte fehlschlagen")
+
+
+def test_lamp_anteil_rot_parses():
+    cfg = AppConfig.model_validate(
+        {
+            "controller": [{"name": "c", "ip": "127.0.0.1", "leds": 8}],
+            "lampen": {"l1": {"controller": "c", "leds": [0], "anteil": "rot"}},
+        }
+    )
+    assert cfg.lampen["l1"].anteil == "r"
+    usage = cfg.led_channel_usage()
+    assert usage["c"]["0"]["r"] == ["l1"]
+    assert usage["c"]["0"]["g"] == []
+
+
+def test_shift_leds_after_fifth_inserts_three():
+    cfg = AppConfig.model_validate(
+        {
+            "controller": [{"name": "c", "ip": "127.0.0.1", "leds": 7}],
+            "lampen": {
+                "l1": {"controller": "c", "leds": [0]},
+                "l5": {"controller": "c", "leds": [4]},
+                "l6": {"controller": "c", "leds": [5]},
+                "l7": {"controller": "c", "leds": [6]},
+            },
+            "haeuser": {
+                "h1": {
+                    "controller": "c",
+                    "fenster": {"f": {"leds": [5], "anteil": "g"}},
+                }
+            },
+            "signale": {
+                "s1": {
+                    "controller": "c",
+                    "begriffe": {
+                        0: {
+                            "name": "Hp0",
+                            "leds": {5: "FF0000"},
+                            "anteile": {5: "r"},
+                        }
+                    },
+                }
+            },
+            "spezial": {"sp1": {"controller": "c", "leds": [5], "anteil": "b"}},
+            "fahrzeuge": {
+                "v1": {
+                    "controller": "c",
+                    "kanaele": {"k": {"leds": [6], "anteil": "r"}},
+                }
+            },
+        }
+    )
+    shifted = cfg.shift_controller_leds("c", first_shifted=5, count=3, wled_count=10)
+    assert shifted == 6
+    assert cfg.lampen["l1"].leds == [0]
+    assert cfg.lampen["l5"].leds == [4]
+    assert cfg.lampen["l6"].leds == [8]
+    assert cfg.lampen["l7"].leds == [9]
+    assert cfg.haeuser["h1"].fenster["f"].leds == [8]
+    assert cfg.signale["s1"].begriffe[0].leds[8] == "FF0000"
+    assert cfg.signale["s1"].begriffe[0].anteile[8] == "r"
+    assert 5 not in cfg.signale["s1"].begriffe[0].leds
+    assert 5 not in cfg.signale["s1"].begriffe[0].anteile
+    assert cfg.spezial["sp1"].leds == [8]
+    assert cfg.fahrzeuge["v1"].kanaele["k"].leds == [9]
+    usage = cfg.led_usage()
+    assert "5" not in usage["c"]
+    assert "8" in usage["c"]
+    assert "9" in usage["c"]
+
+
+def test_shift_leds_rejected_when_wled_too_small():
+    cfg = AppConfig.model_validate(
+        {
+            "controller": [{"name": "c", "ip": "127.0.0.1", "leds": 7}],
+            "lampen": {"l6": {"controller": "c", "leds": [5]}},
+        }
+    )
+    with pytest.raises(ValueError, match="WLED"):
+        cfg.shift_controller_leds("c", first_shifted=5, count=3, wled_count=7)
+
+
+def test_shift_leds_at_start():
+    cfg = AppConfig.model_validate(
+        {
+            "controller": [{"name": "c", "ip": "127.0.0.1", "leds": 4}],
+            "lampen": {"l1": {"controller": "c", "leds": [0, 1]}},
+        }
+    )
+    shifted = cfg.shift_controller_leds("c", first_shifted=0, count=2, wled_count=6)
+    assert shifted == 2
+    assert cfg.lampen["l1"].leds == [2, 3]
+
+
+def test_empty_signal_anteile_omitted_from_dump():
+    cfg = AppConfig.model_validate(
+        {
+            "controller": [{"name": "c", "ip": "127.0.0.1", "leds": 8}],
+            "signale": {
+                "s1": {
+                    "controller": "c",
+                    "begriffe": {0: {"name": "Halt", "leds": {1: "FF0000"}}},
+                }
+            },
+        }
+    )
+    dumped = cfg.model_dump(by_alias=True, exclude_none=True)
+    begriff = dumped["signale"]["s1"]["begriffe"][0]
+    assert "anteile" not in begriff or begriff["anteile"] is None
 

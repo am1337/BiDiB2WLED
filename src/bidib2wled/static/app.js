@@ -275,11 +275,12 @@ document.addEventListener("keydown", (e) => {
 
 const LED_GROUPS = [
   { ctrl: "id-ctrl", out: "id-out", led: "id-led" },
-  { ctrl: "l-ctrl", out: "l-out", led: "l-leds" },
-  { ctrl: "h-ctrl", out: "h-out", led: "h-leds" },
-  { ctrl: "sig-ctrl", out: "sig-out", led: "sig-leds" },
-  { ctrl: "sp-ctrl", out: "sp-out", led: "sp-leds" },
-  { ctrl: "v-ctrl", out: "v-out", led: "v-leds" },
+  { ctrl: "ins-ctrl", out: "ins-out", led: "ins-after", insert: true },
+  { ctrl: "l-ctrl", out: "l-out", led: "l-leds", anteil: "l-anteil" },
+  { ctrl: "h-ctrl", out: "h-out", led: "h-leds", anteil: "h-anteil" },
+  { ctrl: "sig-ctrl", out: "sig-out", led: "sig-leds", anteil: "sig-anteil" },
+  { ctrl: "sp-ctrl", out: "sp-out", led: "sp-leds", anteil: "sp-anteil" },
+  { ctrl: "v-ctrl", out: "v-out", led: "v-leds", anteil: "v-anteil" },
 ];
 
 function controllerByName(name) {
@@ -311,6 +312,22 @@ function fillOptions(el, options, current) {
 function ledOwners(ctrlName, globalIndex) {
   const leds = (status.usage && status.usage.leds && status.usage.leds[ctrlName]) || {};
   return leds[String(globalIndex)] || [];
+}
+
+function expandAnteil(anteil) {
+  if (anteil === "r" || anteil === "g" || anteil === "b") return [anteil];
+  return ["r", "g", "b"];
+}
+
+function ledOwnersForAnteil(ctrlName, globalIndex, anteil) {
+  const channels = (status.usage && status.usage.channels && status.usage.channels[ctrlName]) || {};
+  const perLed = channels[String(globalIndex)];
+  if (!perLed) return ledOwners(ctrlName, globalIndex);
+  const owners = new Set();
+  for (const component of expandAnteil(anteil || "rgb")) {
+    for (const id of perLed[component] || []) owners.add(id);
+  }
+  return [...owners];
 }
 
 function objectOwners(objId) {
@@ -357,24 +374,30 @@ function fillOutputSelect(outId, ctrlName) {
   );
 }
 
-function fillLedSelect(ledId, ctrlName, outId) {
+function fillLedSelect(ledId, ctrlName, outId, anteilId, insert) {
   const el = document.getElementById(ledId);
   if (!el) return;
   const outs = outputsOf(ctrlName);
   const out = outs.find((item) => String(item.id) === String(outId)) || outs[0];
   const selected = new Set([...el.selectedOptions].map((opt) => opt.value));
   if (!out || !out.len) {
-    el.innerHTML = '<option value="">Keine LEDs</option>';
+    el.innerHTML = insert
+      ? '<option value="-1">am Anfang (vor LED 1)</option>'
+      : '<option value="">Keine LEDs</option>';
     return;
   }
   const exclude = currentLedExclude();
-  el.innerHTML = Array.from({ length: out.len }, (_, i) => {
+  const anteil = anteilId && document.getElementById(anteilId) ? document.getElementById(anteilId).value : "rgb";
+  const options = Array.from({ length: out.len }, (_, i) => {
     const global = out.start + i;
-    const mark = usedMark(ledOwners(ctrlName, global), exclude);
+    const mark = usedMark(ledOwnersForAnteil(ctrlName, global, anteil), exclude);
     const cls = mark.used ? ' class="opt-used"' : "";
     const title = mark.title ? ` title="${esc(mark.title)}"` : "";
-    return `<option value="${i}"${cls}${title}>LED ${i + 1} (Nr. ${global})${mark.suffix}</option>`;
-  }).join("");
+    const label = `LED ${i + 1} (Nr. ${global})${mark.suffix}`;
+    return `<option value="${i}"${cls}${title}>${label}</option>`;
+  });
+  if (insert) options.unshift('<option value="-1">am Anfang (vor LED 1)</option>');
+  el.innerHTML = options.join("");
   if (el.multiple) {
     [...el.options].forEach((opt) => {
       opt.selected = selected.has(opt.value);
@@ -401,13 +424,13 @@ function syncLedDropdowns() {
     const out = document.getElementById(group.out);
     if (!ctrl) continue;
     fillOutputSelect(group.out, ctrl.value);
-    fillLedSelect(group.led, ctrl.value, out && out.value);
+    fillLedSelect(group.led, ctrl.value, out && out.value, group.anteil, group.insert);
   }
 }
 
 function fillCtrlSelects() {
   const names = (cfg.controller || []).map((c) => c.name).filter(Boolean);
-  for (const id of ["id-ctrl", "l-ctrl", "h-ctrl", "sig-ctrl", "sp-ctrl", "v-ctrl"]) {
+  for (const id of ["id-ctrl", "ins-ctrl", "l-ctrl", "h-ctrl", "sig-ctrl", "sp-ctrl", "v-ctrl"]) {
     const el = document.getElementById(id);
     if (!el) continue;
     const current = el.value;
@@ -550,14 +573,24 @@ for (const group of LED_GROUPS) {
     ctrl.addEventListener("change", () => {
       fillOutputSelect(group.out, ctrl.value);
       const next = document.getElementById(group.out);
-      fillLedSelect(group.led, ctrl.value, next && next.value);
+      fillLedSelect(group.led, ctrl.value, next && next.value, group.anteil, group.insert);
       if (group.ctrl === "sp-ctrl") fillSpecialFx(ctrl.value);
     });
   }
   if (out) {
     out.addEventListener("change", () => {
-      fillLedSelect(group.led, document.getElementById(group.ctrl).value, out.value);
+      fillLedSelect(group.led, document.getElementById(group.ctrl).value, out.value, group.anteil, group.insert);
     });
+  }
+  if (group.anteil) {
+    const anteil = document.getElementById(group.anteil);
+    if (anteil) {
+      anteil.addEventListener("change", () => {
+        const ctrlEl = document.getElementById(group.ctrl);
+        const outEl = document.getElementById(group.out);
+        fillLedSelect(group.led, ctrlEl && ctrlEl.value, outEl && outEl.value, group.anteil, group.insert);
+      });
+    }
   }
 }
 
@@ -871,6 +904,35 @@ $("#id-go").onclick = () => runAction("LED blinkt", async () => {
   });
 });
 
+$("#ins-go").onclick = () => runAction("LED-Adressen angepasst", async () => {
+  const controller = $("#ins-ctrl").value;
+  const output = Number($("#ins-out").value);
+  const after = Number($("#ins-after").value);
+  const count = Number($("#ins-count").value);
+  if (!controller) throw new Error("Bitte einen Controller wählen.");
+  if (!Number.isInteger(after) || after < -1) throw new Error("Bitte die LED wählen, nach der eingefügt wird.");
+  if (!Number.isInteger(count) || count < 1) throw new Error("Anzahl muss mindestens 1 sein.");
+  const out = outputsOf(controller).find((item) => String(item.id) === String(output));
+  const start = out ? out.start : 0;
+  const first = start + after + 1;
+  const wled = (controllerByName(controller) && controllerByName(controller).leds) || 0;
+  const where = after < 0 ? "am Anfang" : `nach LED ${after + 1} (Nr. ${start + after})`;
+  const ok = window.confirm(
+    `${count} LED(s) ${where} einfügen.\nAlle Objekt-Adressen ab Nr. ${first} werden um ${count} erhöht.\nWLED hat derzeit ${wled} LEDs.`
+  );
+  if (!ok) return false;
+  const data = await api("/api/leds/insert", {
+    method: "POST",
+    body: JSON.stringify({ controller, output, after, count }),
+  });
+  status = data.status || (await api("/api/status"));
+  cfg = await api("/api/config");
+  renderStatus();
+  fillCtrlSelects();
+  notify(`${data.shifted || 0} LED-Adresse(n) verschoben`, true);
+  return false;
+});
+
 function parseLeds(text) {
   return text.split(/[,\s]+/).filter(Boolean).map((x) => Number(x));
 }
@@ -1022,7 +1084,10 @@ function replaceKey(map, oldId, newId, value) {
 
 function fensterToText(fenster) {
   return Object.entries(fenster || {})
-    .map(([name, win]) => `${name}:${(win.leds || []).join(",")}:${win.farbe || DEFAULT_COLOR}`)
+    .map(([name, win]) => {
+      const anteil = win.anteil && win.anteil !== "rgb" ? `:${win.anteil}` : "";
+      return `${name}:${(win.leds || []).join(",")}:${win.farbe || DEFAULT_COLOR}${anteil}`;
+    })
     .join("\n");
 }
 
@@ -1031,21 +1096,24 @@ function parseFensterLines(text) {
   for (const raw of String(text || "").split("\n")) {
     const t = raw.trim();
     if (!t) continue;
-    const [name, leds, farbe] = t.split(":");
+    const [name, leds, farbe, anteil] = t.split(":");
     if (!name) continue;
-    lines.push({ name, leds: leds || "", farbe: (farbe || DEFAULT_COLOR).trim() });
+    lines.push({ name, leds: leds || "", farbe: (farbe || DEFAULT_COLOR).trim(), anteil: anteil || "rgb" });
   }
   return lines;
 }
 
 function fensterLinesToText(lines) {
-  return lines.map((win) => `${win.name}:${win.leds}:${win.farbe}`).join("\n");
+  return lines.map((win) => `${win.name}:${win.leds}:${win.farbe}${win.anteil && win.anteil !== "rgb" ? `:${win.anteil}` : ""}`).join("\n");
 }
 
 function begriffeToText(begriffe) {
   return Object.entries(begriffe || {})
     .map(([asp, b]) => {
-      const leds = Object.entries(b.leds || {}).map(([idx, col]) => `${idx}=${col}`).join(",");
+      const leds = Object.entries(b.leds || {}).map(([idx, col]) => {
+        const anteil = (b.anteile && (b.anteile[idx] || b.anteile[Number(idx)])) || "rgb";
+        return anteil === "rgb" ? `${idx}=${col}` : `${idx}=${col}=${anteil}`;
+      }).join(",");
       return `${asp}:${b.name || asp}:${leds}`;
     })
     .join("\n");
@@ -1056,9 +1124,10 @@ function loadLamp(id, lamp) {
   $("#l-ctrl").value = lamp.controller;
   setEditing("lampe", id);
   fillOutputSelect("l-out", lamp.controller);
+  if ($("#l-anteil")) $("#l-anteil").value = lamp.anteil || "rgb";
   const located = locateLeds(lamp.controller, lamp.leds || []);
   $("#l-out").value = located.outId;
-  fillLedSelect("l-leds", lamp.controller, located.outId);
+  fillLedSelect("l-leds", lamp.controller, located.outId, "l-anteil");
   selectLocals("l-leds", located.locals);
   setColorInput("l-farbe", lamp.farbe || DEFAULT_COLOR);
   $("#art-lampe").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1077,11 +1146,13 @@ function loadHouse(id, house, windowId) {
   if (win) {
     const located = locateLeds(house.controller, win.leds || []);
     $("#h-out").value = located.outId;
-    fillLedSelect("h-leds", house.controller, located.outId);
+    if ($("#h-anteil")) $("#h-anteil").value = win.anteil || "rgb";
+    fillLedSelect("h-leds", house.controller, located.outId, "h-anteil");
     selectLocals("h-leds", located.locals);
     setColorInput("h-win-farbe", win.farbe || DEFAULT_COLOR);
   } else {
-    fillLedSelect("h-leds", house.controller, $("#h-out").value);
+    fillLedSelect("h-leds", house.controller, $("#h-out").value, "h-anteil");
+    if ($("#h-anteil")) $("#h-anteil").value = "rgb";
     setColorInput("h-win-farbe", DEFAULT_COLOR);
   }
   $("#art-haus").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1112,7 +1183,7 @@ function loadSignal(id, signal) {
   $("#sig-ctrl").value = signal.controller;
   setEditing("signal", id);
   fillOutputSelect("sig-out", signal.controller);
-  fillLedSelect("sig-leds", signal.controller, $("#sig-out").value);
+  fillLedSelect("sig-leds", signal.controller, $("#sig-out").value, "sig-anteil");
   $("#sig-asp").value = begriffeToText(signal.begriffe);
   $("#art-signal").scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -1125,7 +1196,8 @@ function loadSpecial(id, spec) {
   fillSpecialFx(spec.controller);
   const located = locateLeds(spec.controller, spec.leds || []);
   $("#sp-out").value = located.outId;
-  fillLedSelect("sp-leds", spec.controller, located.outId);
+  if ($("#sp-anteil")) $("#sp-anteil").value = spec.anteil || "rgb";
+  fillLedSelect("sp-leds", spec.controller, located.outId, "sp-anteil");
   selectLocals("sp-leds", located.locals);
   $("#sp-fx").value = String(spec.effekt ?? 0);
   $("#sp-pal").value = String(spec.palette ?? 0);
@@ -1234,7 +1306,7 @@ function loadVehicle(id, vehicle) {
   $("#v-ctrl").value = vehicle.controller;
   setEditing("fahrzeug", id);
   fillOutputSelect("v-out", vehicle.controller);
-  fillLedSelect("v-leds", vehicle.controller, $("#v-out").value);
+  fillLedSelect("v-leds", vehicle.controller, $("#v-out").value, "v-anteil");
   $("#v-kanaele").value = kanaeleToText(vehicle.kanaele);
   const modi = vehicle.modi && Object.keys(vehicle.modi).length ? vehicle.modi : null;
   $("#v-modi").value = modi ? modiToText(modi) : modiLinesToText(defaultVehicleModi(parseKanaelLines($("#v-kanaele").value)));
@@ -1271,11 +1343,13 @@ function cancelEdit(kind) {
   if (kind === "lampe") {
     $("#l-id").value = "";
     setColorInput("l-farbe", DEFAULT_COLOR);
+    if ($("#l-anteil")) $("#l-anteil").value = "rgb";
   } else if (kind === "haus") {
     $("#h-id").value = "";
     $("#h-win-name").value = "";
     $("#h-fenster").value = "";
     setColorInput("h-win-farbe", DEFAULT_COLOR);
+    if ($("#h-anteil")) $("#h-anteil").value = "rgb";
     editingWindow = null;
   } else if (kind === "gruppe") {
     $("#g-id").value = "";
@@ -1299,6 +1373,7 @@ function cancelEdit(kind) {
     setColorInput("sp-farbe", DEFAULT_COLOR);
     if ($("#sp-fx")) $("#sp-fx").selectedIndex = 0;
     if ($("#sp-pal")) $("#sp-pal").selectedIndex = 0;
+    if ($("#sp-anteil")) $("#sp-anteil").value = "rgb";
   } else if (kind === "fahrzeug") {
     $("#v-id").value = "";
     $("#v-ch-name").value = "";
@@ -1415,6 +1490,7 @@ $("#l-add").onclick = () => {
       controller: $("#l-ctrl").value,
       leds,
       farbe: parseHex($("#l-farbe").value) || DEFAULT_COLOR,
+      anteil: $("#l-anteil") ? $("#l-anteil").value || "rgb" : "rgb",
     });
     if (updating) retargetRefs(next, editing.id, id);
     await api("/api/config", { method: "PUT", body: JSON.stringify(next) });
@@ -1426,6 +1502,7 @@ $("#h-win-add").onclick = () => {
   const name = $("#h-win-name").value.trim();
   const leds = toGlobals($("#h-ctrl").value, $("#h-out").value, selectedLocals("h-leds"));
   const farbe = parseHex($("#h-win-farbe").value) || DEFAULT_COLOR;
+  const anteil = $("#h-anteil") ? $("#h-anteil").value || "rgb" : "rgb";
   if (!name) {
     notify("Bitte einen Fensternamen vergeben.", false);
     return;
@@ -1439,7 +1516,7 @@ $("#h-win-add").onclick = () => {
   if (idx < 0 && editingWindow) idx = lines.findIndex((win) => win.name === editingWindow);
   const existed = idx >= 0;
   runAction(existed ? "Fenster aktualisiert" : "Fenster übernommen", () => {
-    const entry = { name, leds: leds.join(","), farbe };
+    const entry = { name, leds: leds.join(","), farbe, anteil };
     if (idx >= 0) lines[idx] = entry;
     else lines.push(entry);
     $("#h-fenster").value = fensterLinesToText(lines);
@@ -1454,11 +1531,12 @@ $("#h-add").onclick = () => {
     if (!id) throw new Error("Bitte eine ID vergeben.");
     const next = await api("/api/config");
     const fenster = {};
-    for (const line of $("#h-fenster").value.split("\n")) {
-      const t = line.trim();
-      if (!t) continue;
-      const [name, leds, farbe] = t.split(":");
-      fenster[name] = { leds: parseLeds(leds || ""), farbe: (farbe || DEFAULT_COLOR).trim() };
+    for (const line of parseFensterLines($("#h-fenster").value)) {
+      fenster[line.name] = {
+        leds: parseLeds(line.leds || ""),
+        farbe: (line.farbe || DEFAULT_COLOR).trim(),
+        anteil: line.anteil || "rgb",
+      };
     }
     if (!Object.keys(fenster).length) throw new Error("Bitte mindestens ein Fenster übernehmen.");
     next.haeuser = next.haeuser || {};
@@ -1518,9 +1596,10 @@ $("#sig-asp-add").onclick = () => runAction("Begriff übernommen", () => {
   const asp = $("#sig-asp-n").value;
   const name = $("#sig-asp-name").value.trim() || String(asp);
   const farbe = parseHex($("#sig-farbe").value) || "FF0000";
+  const anteil = $("#sig-anteil") ? $("#sig-anteil").value || "rgb" : "rgb";
   const leds = toGlobals($("#sig-ctrl").value, $("#sig-out").value, selectedLocals("sig-leds"));
   if (!leds.length) throw new Error("Bitte mindestens eine LED wählen.");
-  const line = `${asp}:${name}:${leds.map((i) => `${i}=${farbe}`).join(",")}`;
+  const line = `${asp}:${name}:${leds.map((i) => (anteil === "rgb" ? `${i}=${farbe}` : `${i}=${farbe}=${anteil}`)).join(",")}`;
   const ta = $("#sig-asp");
   ta.value = ta.value.trim() ? `${ta.value.trim()}\n${line}` : line;
 });
@@ -1537,11 +1616,18 @@ $("#sig-add").onclick = () => {
       if (!t) continue;
       const [asp, name, rest] = t.split(":");
       const leds = {};
+      const anteile = {};
       for (const part of (rest || "").split(",")) {
-        const [idx, col] = part.split("=");
-        if (idx) leds[Number(idx)] = (col || "FF0000").trim();
+        const bits = part.split("=");
+        const idx = bits[0];
+        const col = bits[1];
+        const anteil = bits[2];
+        if (idx) {
+          leds[Number(idx)] = (col || "FF0000").trim();
+          if (anteil && anteil !== "rgb") anteile[Number(idx)] = anteil;
+        }
       }
-      begriffe[Number(asp)] = { name: name || String(asp), leds };
+      begriffe[Number(asp)] = { name: name || String(asp), leds, anteile };
     }
     if (!Object.keys(begriffe).length) throw new Error("Bitte mindestens einen Begriff übernehmen.");
     next.signale = next.signale || {};
@@ -1576,6 +1662,7 @@ $("#sp-add").onclick = () => {
       geschwindigkeit: sx,
       intensitaet: ix,
       farbe: parseHex($("#sp-farbe").value) || DEFAULT_COLOR,
+      anteil: $("#sp-anteil") ? $("#sp-anteil").value || "rgb" : "rgb",
     });
     if (updating) retargetRefs(next, editing.id, id);
     await api("/api/config", { method: "PUT", body: JSON.stringify(next) });
