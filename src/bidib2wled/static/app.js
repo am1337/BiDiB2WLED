@@ -405,6 +405,8 @@ function fillLedSelect(ledId, ctrlName, outId, anteilId, insert) {
   } else if (selected.size && [...el.options].some((opt) => selected.has(opt.value))) {
     el.value = [...selected][0];
   }
+  scrollSelectToSelection(el);
+  showChosenLeds(el);
 }
 
 function selectedLocals(ledId) {
@@ -591,6 +593,10 @@ for (const group of LED_GROUPS) {
         fillLedSelect(group.led, ctrlEl && ctrlEl.value, outEl && outEl.value, group.anteil, group.insert);
       });
     }
+  }
+  const ledEl = document.getElementById(group.led);
+  if (ledEl) {
+    ledEl.addEventListener("change", () => showChosenLeds(ledEl));
   }
 }
 
@@ -945,6 +951,28 @@ function setColorInput(id, hex) {
   if (field) syncSwatch(field, input.value);
 }
 
+function scrollSelectToSelection(select) {
+  if (!select || !select.size || select.size < 2) return;
+  const option = select.selectedOptions[0];
+  if (!option || !select.options.length) return;
+  const avg = select.scrollHeight / select.options.length;
+  select.scrollTop = Math.max(0, option.index * avg - select.clientHeight / 3);
+}
+
+function showChosenLeds(el) {
+  if (!el) return;
+  let hint = el.parentElement && el.parentElement.querySelector(":scope > .led-chosen");
+  if (!hint) {
+    hint = document.createElement("span");
+    hint.className = "led-chosen";
+    el.insertAdjacentElement("afterend", hint);
+  }
+  const labels = [...el.selectedOptions]
+    .map((opt) => opt.textContent.replace(/\s+· in Verwendung.*$/, "").trim())
+    .filter(Boolean);
+  hint.textContent = labels.length ? `gewählt: ${labels.join(", ")}` : "";
+}
+
 function selectLocals(ledId, locals) {
   const el = document.getElementById(ledId);
   if (!el) return;
@@ -952,6 +980,8 @@ function selectLocals(ledId, locals) {
   [...el.options].forEach((opt) => {
     opt.selected = want.has(opt.value);
   });
+  scrollSelectToSelection(el);
+  showChosenLeds(el);
 }
 
 function locateLeds(ctrlName, globals) {
