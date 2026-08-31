@@ -143,7 +143,7 @@ Auf jedem Controller (WLED-Weboberfläche oder App), **einmalig**:
 3. Gefundene WLED-Geräte benennen und **übernehmen** – oder IP von Hand eintragen.
 4. Unter **Status** die IP eines Controllers anklicken, um dessen WLED-Seite zu öffnen. Unter **Einrichtung** Controller, Ausgang und LED wählen und **identifizieren** („welche Laterne blinkt?“).
 5. Hast du LEDs in die Kette gelötet: zuerst in WLED die LED-Anzahl erhöhen, dann unter **Einrichtung → LEDs in den Bus einfügen** die Stelle angeben (z. B. nach LED 5). Alle Objekt-Adressen ab der nächsten LED werden hochgezählt – mehr als in WLED konfiguriert sind, geht nicht.
-6. Unter **Objekte** Lampen, Häuser, Gruppen, Sequenzen, Signale, Spezial-Effekte und Fahrzeuge anlegen. Jedes Objekt kann einen **WS2811-Anteil** (RGB / nur R / G / B) nutzen, damit drei LEDs an einem Chip unabhängig schalten. Speichern gibt eine Rückmeldung; Farben lassen sich über Farbrad, HTML-Wert oder RGB wählen. Bereits vergebene LEDs und Kanäle sind in den Auswahllisten markiert.
+6. Unter **Objekte** Lampen, Häuser, Gruppen, Sequenzen, Signale, Spezial-Effekte und Fahrzeuge anlegen. Jedes Objekt kann einen **RGB-Anteil** (alle / nur R / G / B) nutzen, damit drei LEDs an einem Pixel unabhängig schalten. Speichern gibt eine Rückmeldung; Farben lassen sich über Farbrad, HTML-Wert oder RGB wählen. Bereits vergebene LEDs und Kanäle sind in den Auswahllisten markiert.
 7. Unter **Status → Verfügbare Objekte** testen (Schalter bzw. Signalbegriff), bei Bedarf **Ändern** oder **Löschen**.
 
 Die Datei `config.yaml` ist das einzige Speicherformat. Die Oberfläche schreibt sie. Von Hand editieren geht ebenfalls; danach in der Oberfläche **Von Disk neu laden** oder einfach speichern – der Dienst prüft die Datei alle 2 Sekunden.
@@ -396,7 +396,7 @@ fahrzeuge:
       3: { name: Einsatz, kanaele: [scheinwerfer, ruecklicht, rundum] }
 ```
 
-Farben sind `RRGGBB` ohne `#`. LED-Indizes sind global auf dem Controller (Ausgang 1 beginnt bei 0). `anteil` (`r`/`g`/`b`/`rgb`) gilt für alle Objekte: so werden die drei LEDs eines WS2811 unabhängig geschaltet. Spezial-Objekte nutzen die WLED-Effekte des Controllers (`effekt` / `palette` sind die Nummern aus der Weboberfläche); Effekte wirken auf das ganze Pixel. Fahrzeuge: `art: rundum` auf einem Pixel lässt die drei Anteile nacheinander aufleuchten. Blinker verschiedener Fahrzeuge haben unterschiedliche Perioden.
+Farben sind `RRGGBB` ohne `#`. LED-Indizes sind global auf dem Controller (Ausgang 1 beginnt bei 0). `anteil` (`r`/`g`/`b`/`rgb`) ist der RGB-Anteil: so werden die drei LEDs eines Pixels unabhängig geschaltet. Spezial-Objekte nutzen die WLED-Effekte des Controllers (`effekt` / `palette` sind die Nummern aus der Weboberfläche); Effekte wirken auf das ganze Pixel. Fahrzeuge: `art: rundum` auf einem Pixel lässt die drei Anteile nacheinander aufleuchten. Blinker verschiedener Fahrzeuge haben unterschiedliche Perioden.
 
 ## Ports
 

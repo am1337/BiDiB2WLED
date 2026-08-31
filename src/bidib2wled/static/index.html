@@ -102,7 +102,7 @@
           <label>Controller <select id="l-ctrl"></select></label>
           <label>Ausgang <select id="l-out"></select></label>
           <label>LEDs (Strg für mehrere) <select id="l-leds" multiple size="6"></select></label>
-          <label>WS2811-Anteil
+          <label title="Rot, Grün oder Blau dieses Pixels, oder alle drei">RGB-Anteil
             <select id="l-anteil">
               <option value="rgb">alle (RGB)</option>
               <option value="r">nur Rot</option>
@@ -136,7 +136,7 @@
           <input id="h-win-name" placeholder="Fenstername wohnzimmer">
           <label>Ausgang <select id="h-out"></select></label>
           <label>LEDs <select id="h-leds" multiple size="6"></select></label>
-          <label>WS2811-Anteil
+          <label title="Rot, Grün oder Blau dieses Pixels, oder alle drei">RGB-Anteil
             <select id="h-anteil">
               <option value="rgb">alle (RGB)</option>
               <option value="r">nur Rot</option>
@@ -197,7 +197,7 @@
           <input id="sig-asp-n" type="number" min="0" value="0" title="Begriff-Nummer" placeholder="Nr.">
           <input id="sig-asp-name" placeholder="Halt">
           <label>LEDs <select id="sig-leds" multiple size="6"></select></label>
-          <label>WS2811-Anteil
+          <label title="Rot, Grün oder Blau dieses Pixels, oder alle drei">RGB-Anteil
             <select id="sig-anteil">
               <option value="rgb">alle (RGB)</option>
               <option value="r">nur Rot</option>
@@ -221,13 +221,13 @@
       </article>
       <article id="art-spezial">
         <h2 id="sp-title">Spezial anlegen</h2>
-        <p>WLED-Effekt auf den gewählten LEDs. Zusammenhängende LEDs bilden ein Segment. Steuerung schaltet nur ein und aus. Bereits verwendete LEDs sind in den Listen markiert. WLED-Effekte wirken immer auf das ganze Pixel; der Anteil gilt beim Ausschalten.</p>
+        <p>WLED-Effekt auf den gewählten LEDs. Zusammenhängende LEDs bilden ein Segment. Steuerung schaltet nur ein und aus. Bereits verwendete LEDs sind in den Listen markiert. WLED-Effekte wirken immer auf das ganze Pixel; der RGB-Anteil gilt beim Ausschalten.</p>
         <div class="row wrap">
           <input id="sp-id" placeholder="ID kamin-feuer">
           <label>Controller <select id="sp-ctrl"></select></label>
           <label>Ausgang <select id="sp-out"></select></label>
           <label>LEDs (Strg für mehrere) <select id="sp-leds" multiple size="6"></select></label>
-          <label>WS2811-Anteil
+          <label title="Rot, Grün oder Blau dieses Pixels, oder alle drei">RGB-Anteil
             <select id="sp-anteil">
               <option value="rgb">alle (RGB)</option>
               <option value="r">nur Rot</option>
@@ -254,9 +254,9 @@
       <article id="art-fahrzeug">
         <h2 id="v-title">Fahrzeug anlegen</h2>
         <p>
-          Standmodell mit Lichtkanälen. Ein WS2811-Chip ist in WLED ein Pixel mit drei Anteilen
-          (R, G, B) – damit lassen sich drei einzelne LEDs unabhängig schalten.
-          Rundumlicht auf einem Chip lässt R, G und B nacheinander aufleuchten.
+          Standmodell mit Lichtkanälen. Ein Pixel hat drei RGB-Anteile (R, G, B) –
+          damit lassen sich drei einzelne LEDs unabhängig schalten.
+          Rundumlicht auf einem Pixel lässt R, G und B nacheinander aufleuchten.
           Blinker mehrerer Fahrzeuge laufen absichtlich leicht unterschiedlich schnell.
         </p>
         <div class="row wrap">
@@ -274,7 +274,7 @@
           <input id="v-ch-name" placeholder="Kanalname scheinwerfer">
           <label>Ausgang <select id="v-out"></select></label>
           <label>LEDs <select id="v-leds" multiple size="6"></select></label>
-          <label>WS2811-Anteil
+          <label title="Rot, Grün oder Blau dieses Pixels, oder alle drei">RGB-Anteil
             <select id="v-anteil">
               <option value="rgb">alle (RGB)</option>
               <option value="r">nur Rot</option>
@@ -348,6 +348,6 @@
       <label>B <input id="cp-b" type="number" min="0" max="255"></label>
     </div>
   </div>
-  <script src="/static/app.js?v=24"></script>
+  <script src="/static/app.js?v=25"></script>
 </body>
 </html>
