@@ -1,5 +1,7 @@
 from bidib2wled.pixels import (
     clear_components,
+    delete_index_range,
+    delete_led_range,
     expand_anteil,
     set_components,
     shift_index,
@@ -45,3 +47,18 @@ def test_shift_helpers():
     mapping, n = shift_index_map({4: "a", 5: "b"}, 5, 3)
     assert mapping == {4: "a", 8: "b"}
     assert n == 1
+
+
+def test_delete_led_range():
+    leds, shifted, dropped = delete_led_range([0, 4, 8, 9], 5, 3)
+    assert leds == [0, 4, 5, 6]
+    assert shifted == 2
+    assert dropped == 0
+    leds, shifted, dropped = delete_led_range([0, 5, 8], 5, 3)
+    assert leds == [0, 5]
+    assert shifted == 1
+    assert dropped == 1
+    mapping, shifted, dropped = delete_index_range({4: "a", 5: "b", 8: "c"}, 5, 3)
+    assert mapping == {4: "a", 5: "c"}
+    assert shifted == 1
+    assert dropped == 1

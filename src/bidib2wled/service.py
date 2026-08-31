@@ -287,8 +287,7 @@ class Service:
         self.bidib.configure(self.config)
         return self.status()
 
-    async def insert_leds(self, controller: str, output: int, after: int, count: int) -> dict:
-        """Fügt `count` LEDs nach lokaler LED `after` (0-basiert) ein und schiebt Folgeadressen."""
+    def _output_info(self, controller: str, output: int) -> tuple[object, int, dict]:
         ctrl = self.config.controller_by_name(controller)
         if ctrl is None:
             raise ValueError(f"Unbekannter Controller: {controller}")
@@ -300,6 +299,19 @@ class Service:
         out = next((item for item in outputs if int(item["id"]) == int(output)), None)
         if out is None:
             raise ValueError(f"Ausgang {output} existiert nicht")
+        return ctrl, int(wled_count), out
+
+    def _led_delta(self, controller: str, wled_count: int) -> dict[str, int]:
+        span = self.config.max_led_index(controller) + 1
+        return {
+            "wled_leds": int(wled_count),
+            "config_leds": max(span, 0),
+            "delta": max(span, 0) - int(wled_count),
+        }
+
+    async def insert_leds(self, controller: str, output: int, after: int, count: int) -> dict:
+        """Fügt `count` LEDs nach lokaler LED `after` (0-basiert) ein und schiebt Folgeadressen."""
+        _ctrl, wled_count, out = self._output_info(controller, output)
         length = int(out["len"] or 0)
         start = int(out["start"] or 0)
         if after < -1 or (length and after >= length):
@@ -314,7 +326,27 @@ class Service:
             "first_shifted": first_shifted,
             "count": count,
             "shifted": shifted,
-            "wled_leds": int(wled_count),
+            **self._led_delta(controller, wled_count),
+        }
+
+    async def delete_leds(self, controller: str, output: int, start_at: int, count: int) -> dict:
+        """Entfernt `count` LEDs ab lokaler LED `start_at` (0-basiert) und zählt Folgeadressen herunter."""
+        _ctrl, wled_count, out = self._output_info(controller, output)
+        start = int(out["start"] or 0)
+        if start_at < 0:
+            raise ValueError("Bitte die erste zu löschende LED wählen")
+        first_removed = start + start_at
+        result = self.config.delete_controller_leds(controller, first_removed, count)
+        self._save()
+        self.engine.load(self.config)
+        return {
+            "ok": True,
+            "controller": controller,
+            "first_removed": first_removed,
+            "count": count,
+            "shifted": result["shifted"],
+            "dropped": result["dropped"],
+            **self._led_delta(controller, wled_count),
         }
 
     async def apply_config(self, config: AppConfig) -> None:

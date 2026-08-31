@@ -45,6 +45,13 @@ class InsertLedsBody(BaseModel):
     count: int = Field(ge=1, le=255)
 
 
+class DeleteLedsBody(BaseModel):
+    controller: str
+    output: int = 0
+    start: int = Field(ge=0, description="Lokaler 0-basierter Index der ersten zu löschenden LED")
+    count: int = Field(ge=1, le=255)
+
+
 def create_app(service: "Service") -> FastAPI:
     app = FastAPI(title="BiDiB2WLED", version="0.1.0")
 
@@ -122,6 +129,15 @@ def create_app(service: "Service") -> FastAPI:
     async def insert_leds(body: InsertLedsBody) -> dict[str, Any]:
         try:
             result = await service.insert_leds(body.controller, body.output, body.after, body.count)
+            result["status"] = service.status()
+            return result
+        except Exception as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/leds/delete")
+    async def delete_leds(body: DeleteLedsBody) -> dict[str, Any]:
+        try:
+            result = await service.delete_leds(body.controller, body.output, body.start, body.count)
             result["status"] = service.status()
             return result
         except Exception as exc:

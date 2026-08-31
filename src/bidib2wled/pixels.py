@@ -103,3 +103,37 @@ def shift_index_map(mapping: dict[int, object], first_shifted: int, count: int) 
         else:
             out[int(key)] = value
     return out, changed
+
+
+def delete_led_range(leds: list[int], first: int, count: int) -> tuple[list[int], int, int]:
+    """Entfernt Indizes in [first, first+count) und zählt spätere herunter."""
+    last = first + count
+    kept: list[int] = []
+    shifted = 0
+    dropped = 0
+    for led in leds:
+        if led < first:
+            kept.append(led)
+        elif led < last:
+            dropped += 1
+        else:
+            kept.append(led - count)
+            shifted += 1
+    return kept, shifted, dropped
+
+
+def delete_index_range(mapping: dict[int, object], first: int, count: int) -> tuple[dict[int, object], int, int]:
+    last = first + count
+    out: dict[int, object] = {}
+    shifted = 0
+    dropped = 0
+    for key, value in mapping.items():
+        idx = int(key)
+        if idx < first:
+            out[idx] = value
+        elif idx < last:
+            dropped += 1
+        else:
+            out[idx - count] = value
+            shifted += 1
+    return out, shifted, dropped

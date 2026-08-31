@@ -93,7 +93,11 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
 #objects select { min-width: 7rem; }
 #objects input[data-address] { width: 4.5rem; }
 #g-mem, #s-grp, #v-mod-kan { min-width: 14rem; }
-#s-d1, #s-d2, #v-blink, #v-rundum, #ins-count { width: 5.5rem; }
+#s-d1, #s-d2, #v-blink, #v-rundum, #ins-count, #del-count { width: 5.5rem; }
+.led-bus-diff {
+  color: var(--muted);
+  margin: 0 0 0.8rem;
+}
 .led-chosen {
   display: block;
   margin: 0.2rem 0 0;

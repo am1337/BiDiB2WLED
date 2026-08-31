@@ -320,6 +320,89 @@ def test_shift_leds_at_start():
     assert cfg.lampen["l1"].leds == [2, 3]
 
 
+def test_delete_leds_after_fifth_removes_three():
+    cfg = AppConfig.model_validate(
+        {
+            "controller": [{"name": "c", "ip": "127.0.0.1", "leds": 10}],
+            "lampen": {
+                "l1": {"controller": "c", "leds": [0]},
+                "l5": {"controller": "c", "leds": [4]},
+                "l6": {"controller": "c", "leds": [8]},
+                "l7": {"controller": "c", "leds": [9]},
+            },
+            "haeuser": {
+                "h1": {"controller": "c", "fenster": {"f": {"leds": [8], "anteil": "g"}}}
+            },
+            "signale": {
+                "s1": {
+                    "controller": "c",
+                    "begriffe": {0: {"name": "Hp0", "leds": {8: "FF0000"}, "anteile": {8: "r"}}},
+                }
+            },
+            "spezial": {"sp1": {"controller": "c", "leds": [8], "anteil": "b"}},
+            "fahrzeuge": {
+                "v1": {"controller": "c", "kanaele": {"k": {"leds": [9], "anteil": "r"}}}
+            },
+        }
+    )
+    result = cfg.delete_controller_leds("c", first_removed=5, count=3)
+    assert result["shifted"] == 6
+    assert result["dropped"] == 0
+    assert cfg.lampen["l1"].leds == [0]
+    assert cfg.lampen["l5"].leds == [4]
+    assert cfg.lampen["l6"].leds == [5]
+    assert cfg.lampen["l7"].leds == [6]
+    assert cfg.haeuser["h1"].fenster["f"].leds == [5]
+    assert cfg.signale["s1"].begriffe[0].leds[5] == "FF0000"
+    assert cfg.signale["s1"].begriffe[0].anteile[5] == "r"
+    assert 8 not in cfg.signale["s1"].begriffe[0].leds
+    assert cfg.spezial["sp1"].leds == [5]
+    assert cfg.fahrzeuge["v1"].kanaele["k"].leds == [6]
+
+
+def test_delete_leds_allowed_when_wled_already_smaller():
+    cfg = AppConfig.model_validate(
+        {
+            "controller": [{"name": "c", "ip": "127.0.0.1", "leds": 10}],
+            "lampen": {
+                "l6": {"controller": "c", "leds": [8]},
+                "l7": {"controller": "c", "leds": [9]},
+            },
+        }
+    )
+    result = cfg.delete_controller_leds("c", first_removed=5, count=2)
+    assert result["shifted"] == 2
+    assert cfg.lampen["l6"].leds == [6]
+    assert cfg.lampen["l7"].leds == [7]
+    result = cfg.delete_controller_leds("c", first_removed=8, count=1)
+    assert cfg.lampen["l6"].leds == [6]
+    assert cfg.lampen["l7"].leds == [7]
+
+
+def test_delete_leds_rejected_when_object_would_be_empty():
+    cfg = AppConfig.model_validate(
+        {
+            "controller": [{"name": "c", "ip": "127.0.0.1", "leds": 7}],
+            "lampen": {"l6": {"controller": "c", "leds": [5]}},
+        }
+    )
+    with pytest.raises(ValueError, match="keine LED mehr"):
+        cfg.delete_controller_leds("c", first_removed=5, count=3)
+    assert cfg.lampen["l6"].leds == [5]
+
+
+def test_delete_leds_drops_only_removed_indices():
+    cfg = AppConfig.model_validate(
+        {
+            "controller": [{"name": "c", "ip": "127.0.0.1", "leds": 10}],
+            "lampen": {"mix": {"controller": "c", "leds": [4, 5, 8]}},
+        }
+    )
+    result = cfg.delete_controller_leds("c", first_removed=5, count=3)
+    assert cfg.lampen["mix"].leds == [4, 5]
+    assert result["dropped"] == 1
+    assert result["shifted"] == 1
+
 def test_empty_signal_anteile_omitted_from_dump():
     cfg = AppConfig.model_validate(
         {

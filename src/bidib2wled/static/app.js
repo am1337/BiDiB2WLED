@@ -276,6 +276,7 @@ document.addEventListener("keydown", (e) => {
 const LED_GROUPS = [
   { ctrl: "id-ctrl", out: "id-out", led: "id-led" },
   { ctrl: "ins-ctrl", out: "ins-out", led: "ins-after", insert: true },
+  { ctrl: "del-ctrl", out: "del-out", led: "del-from", remove: true },
   { ctrl: "l-ctrl", out: "l-out", led: "l-leds", anteil: "l-anteil" },
   { ctrl: "h-ctrl", out: "h-out", led: "h-leds", anteil: "h-anteil" },
   { ctrl: "sig-ctrl", out: "sig-out", led: "sig-leds", anteil: "sig-anteil" },
@@ -374,26 +375,39 @@ function fillOutputSelect(outId, ctrlName) {
   );
 }
 
-function fillLedSelect(ledId, ctrlName, outId, anteilId, insert) {
+function highestConfigLed(ctrlName) {
+  const leds = (status.usage && status.usage.leds && status.usage.leds[ctrlName]) || {};
+  const keys = Object.keys(leds).map(Number).filter(Number.isFinite);
+  return keys.length ? Math.max(...keys) : -1;
+}
+
+function fillLedSelect(ledId, ctrlName, outId, anteilId, insert, remove) {
   const el = document.getElementById(ledId);
   if (!el) return;
   const outs = outputsOf(ctrlName);
   const out = outs.find((item) => String(item.id) === String(outId)) || outs[0];
   const selected = new Set([...el.selectedOptions].map((opt) => opt.value));
-  if (!out || !out.len) {
+  const wledLen = out && out.len ? out.len : 0;
+  const start = out ? out.start : 0;
+  const highest = highestConfigLed(ctrlName);
+  const end = remove ? Math.max(start + wledLen, highest + 1) : start + wledLen;
+  const count = Math.max(0, end - start);
+  if (!out || !count) {
     el.innerHTML = insert
       ? '<option value="-1">am Anfang (vor LED 1)</option>'
       : '<option value="">Keine LEDs</option>';
+    showChosenLeds(el);
     return;
   }
   const exclude = currentLedExclude();
   const anteil = anteilId && document.getElementById(anteilId) ? document.getElementById(anteilId).value : "rgb";
-  const options = Array.from({ length: out.len }, (_, i) => {
-    const global = out.start + i;
+  const options = Array.from({ length: count }, (_, i) => {
+    const global = start + i;
     const mark = usedMark(ledOwnersForAnteil(ctrlName, global, anteil), exclude);
     const cls = mark.used ? ' class="opt-used"' : "";
     const title = mark.title ? ` title="${esc(mark.title)}"` : "";
-    const label = `LED ${i + 1} (Nr. ${global})${mark.suffix}`;
+    const beyond = i >= wledLen ? " · nur Konfiguration" : "";
+    const label = `LED ${i + 1} (Nr. ${global})${mark.suffix}${beyond}`;
     return `<option value="${i}"${cls}${title}>${label}</option>`;
   });
   if (insert) options.unshift('<option value="-1">am Anfang (vor LED 1)</option>');
@@ -426,13 +440,13 @@ function syncLedDropdowns() {
     const out = document.getElementById(group.out);
     if (!ctrl) continue;
     fillOutputSelect(group.out, ctrl.value);
-    fillLedSelect(group.led, ctrl.value, out && out.value, group.anteil, group.insert);
+    fillLedSelect(group.led, ctrl.value, out && out.value, group.anteil, group.insert, group.remove);
   }
 }
 
 function fillCtrlSelects() {
   const names = (cfg.controller || []).map((c) => c.name).filter(Boolean);
-  for (const id of ["id-ctrl", "ins-ctrl", "l-ctrl", "h-ctrl", "sig-ctrl", "sp-ctrl", "v-ctrl"]) {
+  for (const id of ["id-ctrl", "ins-ctrl", "del-ctrl", "l-ctrl", "h-ctrl", "sig-ctrl", "sp-ctrl", "v-ctrl"]) {
     const el = document.getElementById(id);
     if (!el) continue;
     const current = el.value;
@@ -445,6 +459,7 @@ function fillCtrlSelects() {
   }
   syncLedDropdowns();
   fillSpecialFx($("#sp-ctrl") && $("#sp-ctrl").value);
+  renderLedBusDiff();
 }
 
 function fillNamedSelect(el, names, current, emptyLabel) {
@@ -575,13 +590,14 @@ for (const group of LED_GROUPS) {
     ctrl.addEventListener("change", () => {
       fillOutputSelect(group.out, ctrl.value);
       const next = document.getElementById(group.out);
-      fillLedSelect(group.led, ctrl.value, next && next.value, group.anteil, group.insert);
+      fillLedSelect(group.led, ctrl.value, next && next.value, group.anteil, group.insert, group.remove);
       if (group.ctrl === "sp-ctrl") fillSpecialFx(ctrl.value);
+      if (group.insert || group.remove) renderLedBusDiff(ctrl.value);
     });
   }
   if (out) {
     out.addEventListener("change", () => {
-      fillLedSelect(group.led, document.getElementById(group.ctrl).value, out.value, group.anteil, group.insert);
+      fillLedSelect(group.led, document.getElementById(group.ctrl).value, out.value, group.anteil, group.insert, group.remove);
     });
   }
   if (group.anteil) {
@@ -590,7 +606,7 @@ for (const group of LED_GROUPS) {
       anteil.addEventListener("change", () => {
         const ctrlEl = document.getElementById(group.ctrl);
         const outEl = document.getElementById(group.out);
-        fillLedSelect(group.led, ctrlEl && ctrlEl.value, outEl && outEl.value, group.anteil, group.insert);
+        fillLedSelect(group.led, ctrlEl && ctrlEl.value, outEl && outEl.value, group.anteil, group.insert, group.remove);
       });
     }
   }
@@ -646,6 +662,7 @@ function renderStatus() {
     })
     .join("") || "<p>Noch kein Controller übernommen.</p>";
   renderObjects();
+  renderLedBusDiff();
 }
 
 function esc(s) {
@@ -910,6 +927,36 @@ $("#id-go").onclick = () => runAction("LED blinkt", async () => {
   });
 });
 
+function ledBusDiffText(ctrlName) {
+  const ctrl = controllerByName(ctrlName);
+  if (!ctrlName || !ctrl) return "WLED-Länge und Objekt-Adressen erscheinen hier, sobald ein Controller gewählt ist.";
+  const wled = Number(ctrl.leds) || 0;
+  const highest = highestConfigLed(ctrlName);
+  const span = highest + 1;
+  const delta = span - wled;
+  if (!wled && span <= 0) return "Noch keine LEDs bekannt.";
+  if (delta === 0) {
+    return `WLED und Konfiguration: ${wled} LED${wled === 1 ? "" : "s"}.`;
+  }
+  if (delta > 0) {
+    return (
+      `WLED: ${wled} LEDs. Höchste Objekt-Adresse: Nr. ${highest} (${span} in der Konfiguration). ` +
+      `Differenz: ${delta} – in mehreren Schritten entfernen oder in WLED anpassen.`
+    );
+  }
+  return `WLED: ${wled} LEDs. Objekte bis Nr. ${Math.max(highest, 0)}. ${-delta} LED(s) in WLED ohne Objekt.`;
+}
+
+function renderLedBusDiff(name) {
+  const el = $("#led-bus-diff");
+  if (!el) return;
+  const ctrl =
+    name ||
+    ($("#ins-ctrl") && $("#ins-ctrl").value) ||
+    ($("#del-ctrl") && $("#del-ctrl").value);
+  el.textContent = ledBusDiffText(ctrl);
+}
+
 $("#ins-go").onclick = () => runAction("LED-Adressen angepasst", async () => {
   const controller = $("#ins-ctrl").value;
   const output = Number($("#ins-out").value);
@@ -935,7 +982,52 @@ $("#ins-go").onclick = () => runAction("LED-Adressen angepasst", async () => {
   cfg = await api("/api/config");
   renderStatus();
   fillCtrlSelects();
-  notify(`${data.shifted || 0} LED-Adresse(n) verschoben`, true);
+  const extra = data.delta ? ` · Differenz zu WLED: ${data.delta}` : "";
+  notify(`${data.shifted || 0} LED-Adresse(n) verschoben${extra}`, true);
+  return false;
+});
+
+$("#del-go").onclick = () => runAction("LED-Adressen angepasst", async () => {
+  const controller = $("#del-ctrl").value;
+  const output = Number($("#del-out").value);
+  const startAt = Number($("#del-from").value);
+  const count = Number($("#del-count").value);
+  if (!controller) throw new Error("Bitte einen Controller wählen.");
+  if (!Number.isInteger(startAt) || startAt < 0) throw new Error("Bitte die erste zu löschende LED wählen.");
+  if (!Number.isInteger(count) || count < 1) throw new Error("Anzahl muss mindestens 1 sein.");
+  const out = outputsOf(controller).find((item) => String(item.id) === String(output));
+  const start = out ? out.start : 0;
+  const first = start + startAt;
+  const wled = (controllerByName(controller) && controllerByName(controller).leds) || 0;
+  const span = highestConfigLed(controller) + 1;
+  const owners = [];
+  for (let i = 0; i < count; i += 1) {
+    for (const id of ledOwners(controller, first + i)) {
+      if (!owners.includes(id)) owners.push(id);
+    }
+  }
+  const ownerLine = owners.length
+    ? `\nObjekte auf diesen LEDs: ${owners.join(", ")} – deren Adressen auf den entfernten LEDs entfallen.`
+    : "";
+  const ok = window.confirm(
+    `${count} LED(s) ab LED ${startAt + 1} (Nr. ${first}) entfernen.\n` +
+      `Objekt-Adressen ab Nr. ${first + count} werden um ${count} verringert.\n` +
+      `WLED: ${wled} LEDs, Konfiguration ${span}. Differenz: ${span - wled}.` +
+      ownerLine
+  );
+  if (!ok) return false;
+  const data = await api("/api/leds/delete", {
+    method: "POST",
+    body: JSON.stringify({ controller, output, start: startAt, count }),
+  });
+  status = data.status || (await api("/api/status"));
+  cfg = await api("/api/config");
+  renderStatus();
+  fillCtrlSelects();
+  const parts = [`${data.shifted || 0} Adresse(n) heruntergezählt`];
+  if (data.dropped) parts.push(`${data.dropped} entfernt`);
+  if (data.delta) parts.push(`Differenz zu WLED: ${data.delta}`);
+  notify(parts.join(" · "), true);
   return false;
 });
 

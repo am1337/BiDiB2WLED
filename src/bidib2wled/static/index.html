@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>BiDiB2WLED</title>
-  <link rel="stylesheet" href="/static/style.css?v=19">
+  <link rel="stylesheet" href="/static/style.css?v=20">
 </head>
 <body>
   <header>
@@ -77,7 +77,9 @@
         </div>
       </article>
       <article>
-        <h2>4. LEDs in den Bus einfügen</h2>
+        <h2>4. LEDs im Bus nachtragen</h2>
+        <p id="led-bus-diff" class="led-bus-diff">WLED-Länge und Objekt-Adressen erscheinen hier, sobald ein Controller gewählt ist.</p>
+        <h3>Einfügen</h3>
         <p>
           Wenn du LEDs in die Kette gelötet hast: zuerst in WLED die LED-Anzahl erhöhen,
           dann hier die Stelle angeben (z. B. nach LED 5, wenn drei neue zwischen alter LED 5 und 6 sitzen).
@@ -90,6 +92,21 @@
           <label>Nach LED <select id="ins-after"></select></label>
           <label>Neue LEDs <input id="ins-count" type="number" min="1" step="1" value="1"></label>
           <button type="button" id="ins-go">Einfügen und Adressen anpassen</button>
+        </div>
+        <h3>Entfernen</h3>
+        <p>
+          Wenn du LEDs aus der Kette gelötet hast: hier die erste entfernte LED und die Anzahl angeben
+          (z. B. ab LED 6 drei Stück, wenn alte LED 6–8 fehlen).
+          Alle Objekt-Adressen danach werden heruntergezählt.
+          Eine kleinere LED-Anzahl in WLED blockiert das nicht – die Differenz wird oben angezeigt,
+          damit du an mehreren Stellen nacheinander nachtragen kannst.
+        </p>
+        <div class="row wrap">
+          <label>Controller <select id="del-ctrl"></select></label>
+          <label>Ausgang <select id="del-out"></select></label>
+          <label>Ab LED <select id="del-from"></select></label>
+          <label>Anzahl <input id="del-count" type="number" min="1" step="1" value="1"></label>
+          <button type="button" id="del-go">Entfernen und Adressen anpassen</button>
         </div>
       </article>
     </section>
@@ -348,6 +365,6 @@
       <label>B <input id="cp-b" type="number" min="0" max="255"></label>
     </div>
   </div>
-  <script src="/static/app.js?v=25"></script>
+  <script src="/static/app.js?v=26"></script>
 </body>
 </html>

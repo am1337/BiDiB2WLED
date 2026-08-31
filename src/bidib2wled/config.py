@@ -648,6 +648,92 @@ class AppConfig(BaseModel):
                 changed += n
         return changed
 
+    def delete_controller_leds(self, controller: str, first_removed: int, count: int) -> dict[str, int | list[str]]:
+        """Entfernt `count` LEDs ab `first_removed` und zählt Folgeadressen herunter. Keine WLED-Sperre."""
+        from bidib2wled.pixels import delete_index_range, delete_led_range
+
+        if count < 1:
+            raise ValueError("Anzahl muss mindestens 1 sein")
+        if first_removed < 0:
+            raise ValueError("Ungültige Löschposition")
+        emptied: list[str] = []
+
+        def list_empty(obj_id: str, leds: list[int]) -> None:
+            kept, _, _ = delete_led_range(leds, first_removed, count)
+            if not kept:
+                emptied.append(obj_id)
+
+        for lamp_id, lamp in self.lampen.items():
+            if lamp.controller == controller:
+                list_empty(lamp_id, lamp.leds)
+        for house_id, house in self.haeuser.items():
+            if house.controller != controller:
+                continue
+            for window_id, window in house.fenster.items():
+                list_empty(f"{house_id}.{window_id}", window.leds)
+        for signal_id, signal in self.signale.items():
+            if signal.controller != controller:
+                continue
+            for begriff_id, begriff in signal.begriffe.items():
+                kept, _, _ = delete_index_range(dict(begriff.leds), first_removed, count)
+                if not kept:
+                    emptied.append(f"{signal_id}:{begriff.name or begriff_id}")
+        for spec_id, spec in self.spezial.items():
+            if spec.controller == controller:
+                list_empty(spec_id, spec.leds)
+        for vehicle_id, vehicle in self.fahrzeuge.items():
+            if vehicle.controller != controller:
+                continue
+            for channel_id, channel in vehicle.kanaele.items():
+                list_empty(f"{vehicle_id}.{channel_id}", channel.leds)
+        if emptied:
+            names = ", ".join(emptied)
+            raise ValueError(
+                f"Diese LEDs können nicht entfernt werden, sonst hätten folgende Objekte keine LED mehr: {names}. "
+                "Zuerst die Objekte ändern oder löschen."
+            )
+
+        shifted = 0
+        dropped = 0
+        for lamp in self.lampen.values():
+            if lamp.controller != controller:
+                continue
+            lamp.leds, n, d = delete_led_range(lamp.leds, first_removed, count)
+            shifted += n
+            dropped += d
+        for house in self.haeuser.values():
+            if house.controller != controller:
+                continue
+            for window in house.fenster.values():
+                window.leds, n, d = delete_led_range(window.leds, first_removed, count)
+                shifted += n
+                dropped += d
+        for signal in self.signale.values():
+            if signal.controller != controller:
+                continue
+            for begriff in signal.begriffe.values():
+                new_leds, n, d = delete_index_range(dict(begriff.leds), first_removed, count)
+                begriff.leds = {int(k): str(v) for k, v in new_leds.items()}
+                shifted += n
+                dropped += d
+                if begriff.anteile:
+                    new_anteile, _, _ = delete_index_range(dict(begriff.anteile), first_removed, count)
+                    begriff.anteile = {int(k): str(v) for k, v in new_anteile.items()}
+        for spec in self.spezial.values():
+            if spec.controller != controller:
+                continue
+            spec.leds, n, d = delete_led_range(spec.leds, first_removed, count)
+            shifted += n
+            dropped += d
+        for vehicle in self.fahrzeuge.values():
+            if vehicle.controller != controller:
+                continue
+            for channel in vehicle.kanaele.values():
+                channel.leds, n, d = delete_led_range(channel.leds, first_removed, count)
+                shifted += n
+                dropped += d
+        return {"shifted": shifted, "dropped": dropped}
+
     def object_usage(self) -> dict[str, list[str]]:
         """Objekt-ID → Gruppen/Sequenzen, die das Objekt referenzieren."""
         usage: dict[str, list[str]] = {}
