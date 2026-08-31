@@ -323,7 +323,7 @@ class Engine:
         assignments: list[tuple[list[int], str, tuple[int, int, int] | None]],
         force: bool = False,
     ) -> None:
-        """Setzt oder löscht WS2811-Anteile, ohne andere Kanäle desselben Pixels zu überschreiben."""
+        """Setzt oder löscht RGB-Anteile, ohne andere Kanäle desselben Pixels zu überschreiben."""
         device = self.pool.get(controller)
         if device is None:
             raise KeyError(f"Controller {controller} nicht verbunden")
