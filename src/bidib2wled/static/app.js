@@ -950,11 +950,19 @@ function ledBusDiffText(ctrlName) {
 function renderLedBusDiff(name) {
   const el = $("#led-bus-diff");
   if (!el) return;
-  const ctrl =
-    name ||
-    ($("#ins-ctrl") && $("#ins-ctrl").value) ||
-    ($("#del-ctrl") && $("#del-ctrl").value);
-  el.textContent = ledBusDiffText(ctrl);
+  const ins = $("#ins-ctrl") && $("#ins-ctrl").value;
+  const del = $("#del-ctrl") && $("#del-ctrl").value;
+  const names = [];
+  for (const n of [name, del, ins]) {
+    if (n && !names.includes(n)) names.push(n);
+  }
+  if (!names.length) {
+    el.textContent = ledBusDiffText("");
+    return;
+  }
+  el.innerHTML = names
+    .map((n) => `<div><strong>${esc(n)}:</strong> ${esc(ledBusDiffText(n))}</div>`)
+    .join("");
 }
 
 $("#ins-go").onclick = () => runAction("LED-Adressen angepasst", async () => {
