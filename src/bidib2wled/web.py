@@ -61,7 +61,7 @@ def create_app(service: "Service") -> FastAPI:
 
     @app.get("/api/config")
     async def get_config() -> dict[str, Any]:
-        return service.config.model_dump(by_alias=True)
+        return service.config.model_dump(by_alias=True, exclude_none=True)
 
     @app.put("/api/config")
     async def put_config(payload: dict[str, Any]) -> dict[str, Any]:

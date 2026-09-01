@@ -149,9 +149,13 @@ class SignalAspectConfig(BaseModel):
     def _colors(cls, value: dict[int, str]) -> dict[int, str]:
         return {int(idx): LampConfig._color(color) for idx, color in value.items()}
 
-    @field_validator("anteile")
+    @field_validator("anteile", mode="before")
     @classmethod
-    def _anteile(cls, value: dict[int, str]) -> dict[int, str]:
+    def _anteile(cls, value: Any) -> dict[int, str]:
+        if not value:
+            return {}
+        if not isinstance(value, dict):
+            raise ValueError("anteile muss ein Objekt sein")
         return {int(idx): parse_anteil(anteil) for idx, anteil in value.items()}
 
     def anteil_of(self, led: int) -> str:

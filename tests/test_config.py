@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from bidib2wled.config import (
@@ -418,6 +420,38 @@ def test_empty_signal_anteile_omitted_from_dump():
     dumped = cfg.model_dump(by_alias=True, exclude_none=True)
     begriff = dumped["signale"]["s1"]["begriffe"][0]
     assert "anteile" not in begriff or begriff["anteile"] is None
+
+
+def test_config_roundtrip_allows_null_signal_anteile_when_saving_special():
+    """GET dump serializes empty anteile as null; Speichern muss das wieder einlesen."""
+    cfg = AppConfig.model_validate(
+        {
+            "controller": [{"name": "dorf", "ip": "127.0.0.1", "leds": 20}],
+            "signale": {
+                "sig": {
+                    "controller": "dorf",
+                    "begriffe": {0: {"name": "Halt", "leds": {5: "FF0000"}}},
+                }
+            },
+        }
+    )
+    dumped = json.loads(json.dumps(cfg.model_dump(by_alias=True)))
+    assert dumped["signale"]["sig"]["begriffe"]["0"]["anteile"] is None
+    dumped["spezial"] = {
+        "kamin": {
+            "controller": "dorf",
+            "leds": [8],
+            "effekt": 10,
+            "palette": 0,
+            "geschwindigkeit": 128,
+            "intensitaet": 180,
+            "farbe": "FF6A00",
+            "anteil": "rgb",
+        }
+    }
+    again = AppConfig.model_validate(dumped)
+    assert again.signale["sig"].begriffe[0].anteile == {}
+    assert again.spezial["kamin"].effekt == 10
 
 
 def test_signal_same_led_two_color_channels_roundtrip():

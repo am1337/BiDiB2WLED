@@ -279,7 +279,7 @@ class Service:
         save_config(self.config_path, config)
         self._mtime = self.config_path.stat().st_mtime
         await self.apply_config(config)
-        return config.model_dump(by_alias=True)
+        return config.model_dump(by_alias=True, exclude_none=True)
 
     async def set_object_address(self, object_id: str, address: int) -> dict:
         self.config.set_accessory(object_id, address)
