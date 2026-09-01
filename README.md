@@ -14,7 +14,7 @@ Läuft unter **Linux**, **Windows** und **macOS** (Python 3.11 oder neuer).
 | **Haus** | mehrere Fenster mit Farbe und Einschaltverhalten (sofort, nacheinander, zufällig) | Haus als Ganzes; Fenster auch einzeln |
 | **Gruppe** | mehrere Lampen/Häuser (z. B. eine Straße) | alle Mitglieder gemeinsam |
 | **Sequenz** | gestaffeltes Ein- oder Ausschalten mit Pausen | an = Reihenfolge „an“, aus = umgekehrt |
-| **Signal** | mehrere Begriffe (Halt, Fahrt, …), je Begriff eigene LEDs/Farben | Begriff (Aspekt) 0, 1, 2, … |
+| **Signal** | mehrere Begriffe (Halt, Fahrt, …), je Begriff LEDs/Farben (WS2811: auch R/G/B derselben LED) | Begriff (Aspekt) 0, 1, 2, … |
 | **Spezial** | eingebauter WLED-Effekt (Feuer, Kerze, …) auf den gewählten LEDs | aus / an |
 | **Fahrzeug** | Standmodell mit Lichtkanälen (Scheinwerfer, Blinker, Rundumlicht, …) | Modus (aus, Licht, Warnblinker, Einsatz, …) |
 
@@ -296,7 +296,7 @@ In Rocview: **Tabellen → Signale → Neu**.
 | Grün / Fahrt | 1 oder 2 | je nach angelegten Begriffen |
 | Gelb | 1 | z. B. Halt erwarten |
 
-Die Begriffsnummern sind dieselben wie in der Objektliste der Bridge (Auswahl **Halt** / **Fahrt** …) bzw. in der YAML unter `signale: … begriffe:`.
+Die Begriffsnummern sind dieselben wie in der Objektliste der Bridge (Auswahl **Halt** / **Fahrt** …) bzw. in der YAML unter `signale: … begriffe:`. Halt und Fahrt können dieselbe WS2811-LED nutzen, wenn Rot und Grün als `anteile` `r` und `g` getrennt sind.
 
 **Fahrzeuge** mit mehreren Modi (Licht, Warnblinker, Einsatz) werden in Rocrail ebenfalls als Signal angelegt. Die Modusnummern entsprechen der Auswahl in der Objektliste (0 = Aus).
 
@@ -361,7 +361,7 @@ signale:
     controller: dorf
     begriffe:
       0: { name: Halt, leds: { 12: "FF0000" }, anteile: { 12: r } }
-      2: { name: Fahrt, leds: { 14: "00FF00" } }
+      1: { name: Fahrt, leds: { 12: "00FF00" }, anteile: { 12: g } }
 
 spezial:
   kamin-feuer:

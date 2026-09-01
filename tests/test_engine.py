@@ -156,6 +156,35 @@ async def test_signal_atomic(engine):
 
 
 @pytest.mark.asyncio
+async def test_signal_same_led_halt_fahrt_channels():
+    pool = WledPool(simulate=True)
+    pool.bind("dorf", ip="127.0.0.1", leds=8, mac="aa:bb:cc:dd:ee:ff")
+    cfg = AppConfig.model_validate(
+        {
+            "controller": [{"name": "dorf", "ip": "127.0.0.1", "leds": 8}],
+            "signale": {
+                "sig": {
+                    "controller": "dorf",
+                    "begriffe": {
+                        0: {"name": "Halt", "leds": {3: "FF0000"}, "anteile": {3: "r"}},
+                        1: {"name": "Fahrt", "leds": {3: "00FF00"}, "anteile": {3: "g"}},
+                    },
+                }
+            },
+        }
+    )
+    eng = Engine(pool)
+    eng.load(cfg)
+    await eng.switch("sig", 0)
+    pix = eng.pool.get("dorf").pixels
+    assert pix[3] == (255, 0, 0)
+    await eng.switch("sig", 1)
+    assert pix[3] == (0, 255, 0)
+    await eng.switch("sig", 0)
+    assert pix[3] == (255, 0, 0)
+
+
+@pytest.mark.asyncio
 async def test_sequence(engine):
     await engine.switch("seq", 1)
     pix = engine.pool.get("dorf").pixels

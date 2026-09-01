@@ -419,3 +419,43 @@ def test_empty_signal_anteile_omitted_from_dump():
     begriff = dumped["signale"]["s1"]["begriffe"][0]
     assert "anteile" not in begriff or begriff["anteile"] is None
 
+
+def test_signal_same_led_two_color_channels_roundtrip():
+    cfg = AppConfig.model_validate(
+        {
+            "controller": [{"name": "c", "ip": "127.0.0.1", "leds": 8}],
+            "signale": {
+                "s1": {
+                    "controller": "c",
+                    "begriffe": {
+                        0: {
+                            "name": "Halt",
+                            "leds": {5: "FF0000"},
+                            "anteile": {5: "r"},
+                        },
+                        1: {
+                            "name": "Fahrt",
+                            "leds": {5: "00FF00"},
+                            "anteile": {5: "g"},
+                        },
+                    },
+                }
+            },
+        }
+    )
+    halt = cfg.signale["s1"].begriffe[0]
+    fahrt = cfg.signale["s1"].begriffe[1]
+    assert halt.leds[5] == "FF0000"
+    assert halt.anteile[5] == "r"
+    assert fahrt.leds[5] == "00FF00"
+    assert fahrt.anteile[5] == "g"
+    dumped = cfg.model_dump(by_alias=True, exclude_none=True)
+    begriffe = dumped["signale"]["s1"]["begriffe"]
+    assert begriffe[0]["leds"][5] == "FF0000"
+    assert begriffe[0]["anteile"][5] == "r"
+    assert begriffe[1]["leds"][5] == "00FF00"
+    assert begriffe[1]["anteile"][5] == "g"
+    again = AppConfig.model_validate(dumped)
+    assert again.signale["s1"].begriffe[0].anteil_of(5) == "r"
+    assert again.signale["s1"].begriffe[1].anteil_of(5) == "g"
+

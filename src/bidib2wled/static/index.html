@@ -204,7 +204,7 @@
       </article>
       <article id="art-signal">
         <h2 id="sig-title">Signal anlegen</h2>
-        <p>Begriffe über die Dropdowns wählen und „Begriff übernehmen“.</p>
+        <p>Begriffe über die Dropdowns wählen und „Begriff übernehmen“. Halt und Fahrt dürfen dieselbe LED nutzen, wenn Rot und Grün als RGB-Anteil getrennt sind – dann entsteht je Farbe ein Eintrag.</p>
         <div class="row wrap">
           <input id="sig-id" placeholder="signal-ausfahrt">
           <label>Controller <select id="sig-ctrl"></select></label>
@@ -230,7 +230,7 @@
           </label>
           <button type="button" id="sig-asp-add" class="secondary">Begriff übernehmen</button>
         </div>
-        <textarea id="sig-asp" rows="3" placeholder="0:Halt:12=FF0000&#10;2:Fahrt:14=00FF00"></textarea>
+        <textarea id="sig-asp" rows="3" placeholder="0:Halt:12=FF0000=r&#10;1:Fahrt:12=00FF00=g"></textarea>
         <div class="row">
           <button id="sig-add">Signal speichern</button>
           <button type="button" id="sig-cancel" class="secondary hidden">Abbrechen</button>
@@ -365,6 +365,6 @@
       <label>B <input id="cp-b" type="number" min="0" max="255"></label>
     </div>
   </div>
-  <script src="/static/app.js?v=27"></script>
+  <script src="/static/app.js?v=28"></script>
 </body>
 </html>
