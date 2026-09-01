@@ -1367,6 +1367,11 @@ function loadSignal(id, signal) {
   fillOutputSelect("sig-out", signal.controller);
   fillLedSelect("sig-leds", signal.controller, $("#sig-out").value, "sig-anteil");
   $("#sig-asp").value = begriffeToText(signal.begriffe);
+  $("#sig-asp-n").value = "0";
+  $("#sig-asp-name").value = "Halt";
+  $("#sig-asp-name").placeholder = "Halt";
+  if ($("#sig-anteil")) $("#sig-anteil").value = "rgb";
+  setColorInput("sig-farbe", "FF0000");
   $("#art-signal").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -1544,7 +1549,8 @@ function cancelEdit(kind) {
   } else if (kind === "signal") {
     $("#sig-id").value = "";
     $("#sig-asp").value = "";
-    $("#sig-asp-name").value = "";
+    $("#sig-asp-name").value = "Halt";
+    $("#sig-asp-name").placeholder = "Halt";
     setColorInput("sig-farbe", "FF0000");
     const aspN = $("#sig-asp-n");
     if (aspN) aspN.value = "0";
@@ -1778,7 +1784,8 @@ $("#s-add").onclick = () => {
 $("#sig-asp-add").onclick = () => runAction("Begriff übernommen", () => {
   let asp = Number($("#sig-asp-n").value);
   if (!Number.isFinite(asp) || asp < 0) asp = 0;
-  const typedName = $("#sig-asp-name").value.trim();
+  const nameField = $("#sig-asp-name");
+  const typedName = (nameField.value || "").trim() || (nameField.placeholder || "").trim();
   const anteil = $("#sig-anteil") ? $("#sig-anteil").value || "rgb" : "rgb";
   syncFarbeToAnteil("sig-farbe", anteil);
   const farbe = parseHex($("#sig-farbe").value) || ANTEIL_PRIMARY[anteil] || "FF0000";
@@ -1804,7 +1811,8 @@ $("#sig-asp-add").onclick = () => runAction("Begriff übernommen", () => {
   $("#sig-asp").value = begriffeToText(begriffe);
   if (wasNew) {
     $("#sig-asp-n").value = String(nextAspectNumber(begriffe));
-    $("#sig-asp-name").value = "";
+    nameField.value = "";
+    nameField.placeholder = "Fahrt";
   } else {
     $("#sig-asp-n").value = String(asp);
   }
