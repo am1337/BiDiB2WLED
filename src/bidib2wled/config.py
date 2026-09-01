@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 _DURATION_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*s?\s*$", re.I)
 _MAC_HEX_RE = re.compile(r"[^0-9a-fA-F]")
@@ -144,6 +144,14 @@ class SignalAspectConfig(BaseModel):
     leds: dict[int, str] = Field(default_factory=dict)
     anteile: dict[int, str] = Field(default_factory=dict)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_null_anteile(cls, data: Any) -> Any:
+        if isinstance(data, dict) and data.get("anteile") is None:
+            data = dict(data)
+            data.pop("anteile", None)
+        return data
+
     @field_validator("leds")
     @classmethod
     def _colors(cls, value: dict[int, str]) -> dict[int, str]:
@@ -160,10 +168,6 @@ class SignalAspectConfig(BaseModel):
 
     def anteil_of(self, led: int) -> str:
         return self.anteile.get(int(led), "rgb")
-
-    @field_serializer("anteile")
-    def _dump_anteile(self, value: dict[int, str]) -> dict[int, str] | None:
-        return value or None
 
 
 class SignalConfig(BaseModel):
@@ -793,12 +797,31 @@ def load_config(path: Path) -> AppConfig:
     return AppConfig.model_validate(raw)
 
 
+def _omit_empty_anteile(payload: Any) -> Any:
+    """YAML darf kein `anteile: null` schreiben – das hat den Start blockiert."""
+    if not isinstance(payload, dict):
+        return payload
+    signale = payload.get("signale")
+    if not isinstance(signale, dict):
+        return payload
+    for signal in signale.values():
+        if not isinstance(signal, dict):
+            continue
+        begriffe = signal.get("begriffe")
+        if not isinstance(begriffe, dict):
+            continue
+        for begriff in begriffe.values():
+            if isinstance(begriff, dict) and not begriff.get("anteile"):
+                begriff.pop("anteile", None)
+    return payload
+
+
 def save_config(path: Path, config: AppConfig) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
         backup = path.with_suffix(path.suffix + ".bak")
         shutil.copy2(path, backup)
-    payload = config.model_dump(by_alias=True, exclude_none=True)
+    payload = _omit_empty_anteile(config.model_dump(by_alias=True, exclude_none=True))
     text = yaml.safe_dump(payload, allow_unicode=True, sort_keys=False, default_flow_style=False)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(text, encoding="utf-8")

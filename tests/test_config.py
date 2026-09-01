@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -10,6 +11,7 @@ from bidib2wled.config import (
     normalize_mac,
     parse_delay_range,
     parse_duration,
+    save_config,
 )
 
 
@@ -419,7 +421,46 @@ def test_empty_signal_anteile_omitted_from_dump():
     )
     dumped = cfg.model_dump(by_alias=True, exclude_none=True)
     begriff = dumped["signale"]["s1"]["begriffe"][0]
-    assert "anteile" not in begriff or begriff["anteile"] is None
+    assert begriff.get("anteile") in (None, {})
+
+
+def test_yaml_null_anteile_loads_signal_with_space_in_id(tmp_path: Path):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        """
+controller:
+  - name: dorf
+    ip: 127.0.0.1
+    leds: 20
+signale:
+  signal 2:
+    controller: dorf
+    begriffe:
+      0:
+        name: Halt
+        leds:
+          12: "FF0000"
+        anteile:
+      1:
+        name: Fahrt
+        leds:
+          14: "00FF00"
+        anteile: null
+""",
+        encoding="utf-8",
+    )
+    cfg = load_config(path)
+    halt = cfg.signale["signal 2"].begriffe[0]
+    fahrt = cfg.signale["signal 2"].begriffe[1]
+    assert halt.name == "Halt"
+    assert halt.anteile == {}
+    assert fahrt.name == "Fahrt"
+    assert fahrt.anteile == {}
+    save_config(path, cfg)
+    text = path.read_text(encoding="utf-8")
+    assert "anteile:" not in text
+    again = load_config(path)
+    assert again.signale["signal 2"].begriffe[0].leds[12] == "FF0000"
 
 
 def test_config_roundtrip_allows_null_signal_anteile_when_saving_special():
@@ -436,7 +477,7 @@ def test_config_roundtrip_allows_null_signal_anteile_when_saving_special():
         }
     )
     dumped = json.loads(json.dumps(cfg.model_dump(by_alias=True)))
-    assert dumped["signale"]["sig"]["begriffe"]["0"]["anteile"] is None
+    dumped["signale"]["sig"]["begriffe"]["0"]["anteile"] = None
     dumped["spezial"] = {
         "kamin": {
             "controller": "dorf",
