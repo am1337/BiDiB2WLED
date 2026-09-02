@@ -2113,7 +2113,10 @@ $("#v-kanaele").addEventListener("input", () => fillVehicleModeChannels());
 
 ["v-art", "v-schritte"].forEach((id) => {
   const el = document.getElementById(id);
-  if (el) el.addEventListener("change", updateRundumHint);
+  if (el) {
+    el.addEventListener("change", updateRundumHint);
+    el.addEventListener("input", updateRundumHint);
+  }
 });
 
 $("#v-ch-add").onclick = () => {

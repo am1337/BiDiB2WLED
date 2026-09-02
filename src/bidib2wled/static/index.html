@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>BiDiB2WLED</title>
-  <link rel="stylesheet" href="/static/style.css?v=20">
+  <link rel="stylesheet" href="/static/style.css?v=21">
 </head>
 <body>
   <header>
@@ -109,8 +109,8 @@
           <button type="button" id="del-go">Entfernen und Adressen anpassen</button>
         </div>
       </article>
-      <article>
-        <h2>5. LED-Namen</h2>
+      <article id="art-led-namen">
+        <h2 id="nam-title">5. LED-Namen</h2>
         <p>
           Namen für einzelne LEDs, RGB-Anteile oder Bereiche. In den LED-Listen erscheint der Name hinter der Nummer.
           Beim Einfügen oder Entfernen im Bus wandern die Namen mit den LEDs mit.
@@ -329,7 +329,7 @@
               <option value="doppelblitz">Doppelblitz</option>
             </select>
           </label>
-          <label id="v-schritte-wrap" class="hidden" title="Nur Rundumlicht: ganze Pixel oder die RGB-Pins eines WS2811 nacheinander">Rundum-Schritte
+          <label id="v-schritte-wrap" title="Nur Rundumlicht: ganze Pixel oder die RGB-Pins eines WS2811 nacheinander">Rundum-Schritte
             <select id="v-schritte">
               <option value="auto">automatisch</option>
               <option value="leds">LEDs nacheinander</option>
@@ -388,6 +388,6 @@
       <label>B <input id="cp-b" type="number" min="0" max="255"></label>
     </div>
   </div>
-  <script src="/static/app.js?v=31"></script>
+  <script src="/static/app.js?v=32"></script>
 </body>
 </html>

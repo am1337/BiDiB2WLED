@@ -26,6 +26,10 @@ nav button, button {
 nav button.active, button:not(.secondary):hover { border-color: var(--accent); color: var(--accent); }
 button.secondary { color: var(--muted); }
 .hidden { display: none !important; }
+#v-schritte-wrap { display: none !important; }
+.row:has(#v-art option[value="rundum"]:checked) #v-schritte-wrap {
+  display: block !important;
+}
 article {
   background: var(--card); border: 1px solid var(--line);
   border-radius: 10px; padding: 1rem 1.1rem; margin-bottom: 1rem;
