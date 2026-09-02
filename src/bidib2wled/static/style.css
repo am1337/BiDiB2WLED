@@ -26,6 +26,10 @@ nav button, button {
 nav button.active, button:not(.secondary):hover { border-color: var(--accent); color: var(--accent); }
 button.secondary { color: var(--muted); }
 .hidden { display: none !important; }
+#v-schritte-wrap { display: none !important; }
+.row:has(#v-art option[value="rundum"]:checked) #v-schritte-wrap {
+  display: block !important;
+}
 article {
   background: var(--card); border: 1px solid var(--line);
   border-radius: 10px; padding: 1rem 1.1rem; margin-bottom: 1rem;
@@ -92,8 +96,19 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
 #objects .obj-actions { display: flex; gap: 0.35rem; justify-content: flex-end; align-items: center; }
 #objects select { min-width: 7rem; }
 #objects input[data-address] { width: 4.5rem; }
-#g-mem, #s-grp { min-width: 14rem; }
-#s-d1, #s-d2 { width: 5.5rem; }
+#g-mem, #s-grp, #v-mod-kan { min-width: 14rem; }
+#s-d1, #s-d2, #v-blink, #v-rundum, #ins-count, #del-count { width: 5.5rem; }
+.led-bus-diff {
+  color: var(--muted);
+  margin: 0 0 0.8rem;
+}
+.led-chosen {
+  display: block;
+  margin: 0.2rem 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+article h3 { margin: 0.8rem 0 0.35rem; font-size: 0.95rem; color: var(--muted); font-weight: 600; }
 #objects td.obj-info { overflow: visible; }
 #objects .obj-help-wrap { position: relative; display: inline-flex; }
 #objects .obj-help {

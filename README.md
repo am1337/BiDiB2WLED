@@ -14,10 +14,11 @@ Läuft unter **Linux**, **Windows** und **macOS** (Python 3.11 oder neuer).
 | **Haus** | mehrere Fenster mit Farbe und Einschaltverhalten (sofort, nacheinander, zufällig) | Haus als Ganzes; Fenster auch einzeln |
 | **Gruppe** | mehrere Lampen/Häuser (z. B. eine Straße) | alle Mitglieder gemeinsam |
 | **Sequenz** | gestaffeltes Ein- oder Ausschalten mit Pausen | an = Reihenfolge „an“, aus = umgekehrt |
-| **Signal** | mehrere Begriffe (Halt, Fahrt, …), je Begriff eigene LEDs/Farben | Begriff (Aspekt) 0, 1, 2, … |
+| **Signal** | mehrere Begriffe (Halt, Fahrt, …), je Begriff LEDs/Farben (WS2811: auch R/G/B derselben LED) | Begriff (Aspekt) 0, 1, 2, … |
 | **Spezial** | eingebauter WLED-Effekt (Feuer, Kerze, …) auf den gewählten LEDs | aus / an |
+| **Fahrzeug** | Standmodell mit Lichtkanälen (Scheinwerfer, Blinker, Rundumlicht, …) | Modus (aus, Licht, Warnblinker, Einsatz, …) |
 
-Zusätzlich: WLED-Geräte im Netz finden, LEDs am Modell identifizieren (blinken lassen), alles in der Weboberfläche anlegen und testen, dauerhaft als Dienst betreiben.
+Zusätzlich: WLED-Geräte im Netz finden, LEDs am Modell identifizieren (blinken lassen), LEDs benennen, LEDs in den Bus nachtragen (Adressen und Namen der folgenden LEDs werden verschoben), alles in der Weboberfläche anlegen und testen, dauerhaft als Dienst betreiben.
 
 ![Statusseite](status.png)
 
@@ -141,8 +142,10 @@ Auf jedem Controller (WLED-Weboberfläche oder App), **einmalig**:
 2. Unter **Einrichtung** den Knotennamen und den netBiDiB-Port prüfen. **Server** ist der Normalfall: Rocrail verbindet sich zur Bridge (Standardport **62875**).
 3. Gefundene WLED-Geräte benennen und **übernehmen** – oder IP von Hand eintragen.
 4. Unter **Status** die IP eines Controllers anklicken, um dessen WLED-Seite zu öffnen. Unter **Einrichtung** Controller, Ausgang und LED wählen und **identifizieren** („welche Laterne blinkt?“).
-5. Unter **Objekte** Lampen, Häuser, Gruppen, Sequenzen, Signale und Spezial-Effekte anlegen. Speichern gibt eine Rückmeldung; Farben lassen sich über Farbrad, HTML-Wert oder RGB wählen. Bereits vergebene LEDs und Objekte sind in den Auswahllisten markiert.
-6. Unter **Status → Verfügbare Objekte** testen (Schalter bzw. Signalbegriff), bei Bedarf **Ändern** oder **Löschen**.
+5. Hast du LEDs in die Kette gelötet oder entfernt: unter **Einrichtung → LEDs im Bus nachtragen**. Zum Einfügen zuerst in WLED die LED-Anzahl erhöhen, dann die Stelle angeben (z. B. nach LED 5) – Folgeadressen werden hochgezählt, mehr als in WLED geht nicht. Zum Entfernen die erste fehlende LED und die Anzahl angeben (z. B. ab LED 6 drei Stück) – Folgeadressen werden heruntergezählt. Wenn WLED schon weniger LEDs hat, blockiert das nicht; die Differenz wird angezeigt, damit du an mehreren Stellen nacheinander nachtragen kannst.
+6. Unter **Einrichtung → LED-Namen** kannst du einzelne LEDs, RGB-Anteile und Bereiche benennen, z. B. `LED1 = Straßenlaterne`, `3-7 = Haus3`, `12r = Halt`. In den Listen ersetzt der Name die Nummer: `LED 1 (Straßenlaterne)` statt `LED 1 (Nr. 0)`. Mehrere Farbnamen stehen mit `/` getrennt, z. B. `LED 12 (Halt / Fahrt)`. Beim Nachtragen im Bus wandern die Namen mit den LEDs mit. Die Nummern gelten für den gewählten Ausgang (LED 1 ist dort die erste).
+7. Unter **Objekte** Lampen, Häuser, Gruppen, Sequenzen, Signale, Spezial-Effekte und Fahrzeuge anlegen. Jedes Objekt kann einen **RGB-Anteil** (alle / nur R / G / B) nutzen, damit drei LEDs an einem Pixel unabhängig schalten. Speichern gibt eine Rückmeldung; Farben lassen sich über Farbrad, HTML-Wert oder RGB wählen. Bereits vergebene LEDs und Kanäle sind in den Auswahllisten markiert. Bei Fahrzeugen erscheint **Rundum-Schritte** nur, wenn die Kanal-Art **Rundumlicht** ist.
+8. Unter **Status → Verfügbare Objekte** testen (Schalter bzw. Signalbegriff), bei Bedarf **Ändern** oder **Löschen**.
 
 Die Datei `config.yaml` ist das einzige Speicherformat. Die Oberfläche schreibt sie. Von Hand editieren geht ebenfalls; danach in der Oberfläche **Von Disk neu laden** oder einfach speichern – der Dienst prüft die Datei alle 2 Sekunden.
 
@@ -265,6 +268,7 @@ Was der Klick bewirkt:
 - **Lampe:** LEDs an oder aus
 - **Haus:** Fenster nach dem in der Bridge eingestellten Verhalten
 - **Spezial:** WLED-Effekt an oder aus (kein Pixel-für-Pixel)
+- **Fahrzeug:** Modus 1 = Licht, höhere Modi je nach Anlage (Warnblinker, Einsatz); Blinker mehrerer Fahrzeuge sind nicht synchron
 - **Gruppe:** alle Mitglieder
 - **Sequenz:** an = gestaffelt ein, aus = gestaffelt aus; ein erneuter Befehl bricht eine laufende Sequenz ab
 
@@ -293,7 +297,9 @@ In Rocview: **Tabellen → Signale → Neu**.
 | Grün / Fahrt | 1 oder 2 | je nach angelegten Begriffen |
 | Gelb | 1 | z. B. Halt erwarten |
 
-Die Begriffsnummern sind dieselben wie in der Objektliste der Bridge (Auswahl **Halt** / **Fahrt** …) bzw. in der YAML unter `signale: … begriffe:`.
+Die Begriffsnummern sind dieselben wie in der Objektliste der Bridge (Auswahl **Halt** / **Fahrt** …) bzw. in der YAML unter `signale: … begriffe:`. Halt und Fahrt können dieselbe WS2811-LED nutzen, wenn Rot und Grün als `anteile` `r` und `g` getrennt sind.
+
+**Fahrzeuge** mit mehreren Modi (Licht, Warnblinker, Einsatz) werden in Rocrail ebenfalls als Signal angelegt. Die Modusnummern entsprechen der Auswahl in der Objektliste (0 = Aus).
 
 ### 7. Kurz-Check
 
@@ -325,19 +331,26 @@ controller:
   - name: dorf
     ip: 192.168.1.51
     leds: 80
+    namen:
+      - { led: 0, name: Straßenlaterne }
+      - { von: 2, bis: 6, name: Haus3 }
+      - { led: 11, anteil: r, name: Halt }
+      - { led: 11, anteil: g, name: Fahrt }
 
 lampen:
   laterne-01:
     controller: dorf
     leds: [0]
     farbe: "FFB060"
+    anteil: rgb
 
 haeuser:
   haus-baecker:
     controller: dorf
     einschalten: nacheinander
     fenster:
-      wohnzimmer: { leds: [18, 19], farbe: "FFB060" }
+      wohnzimmer: { leds: [18, 19], farbe: "FFB060", anteil: r }
+      kueche: { leds: [18], farbe: "00FF00", anteil: g }
 
 gruppen:
   hauptstrasse:
@@ -353,8 +366,8 @@ signale:
   signal-ausfahrt:
     controller: dorf
     begriffe:
-      0: { name: Halt, leds: { 12: "FF0000" } }
-      2: { name: Fahrt, leds: { 14: "00FF00" } }
+      0: { name: Halt, leds: { 12: "FF0000" }, anteile: { 12: r } }
+      1: { name: Fahrt, leds: { 12: "00FF00" }, anteile: { 12: g } }
 
 spezial:
   kamin-feuer:
@@ -365,9 +378,43 @@ spezial:
     geschwindigkeit: 128
     intensitaet: 128
     farbe: "FF6A00"
+
+fahrzeuge:
+  pkw-rot:
+    controller: dorf
+    kanaele:
+      licht: { leds: [30], anteil: rgb, farbe: "FFFFCC", art: dauer }
+      blinker-l: { leds: [31], anteil: r, farbe: "FF8000", art: blinker }
+      blinker-r: { leds: [31], anteil: g, farbe: "FF8000", art: blinker }
+    modi:
+      0: { name: Aus, kanaele: [] }
+      1: { name: Licht, kanaele: [licht] }
+      2: { name: Warnblinker, kanaele: [licht, blinker-l, blinker-r] }
+  feuerwehr:
+    controller: dorf
+    kanaele:
+      scheinwerfer: { leds: [32], anteil: r, farbe: "FFFFCC", art: dauer }
+      ruecklicht: { leds: [32], anteil: g, farbe: "FF0000", art: dauer }
+      rundum: { leds: [33], anteil: rgb, farbe: "0000FF", art: rundum, schritte: kanaele }
+    modi:
+      0: { name: Aus, kanaele: [] }
+      1: { name: Licht, kanaele: [scheinwerfer, ruecklicht] }
+      3: { name: Einsatz, kanaele: [scheinwerfer, ruecklicht, rundum] }
 ```
 
-Farben sind `RRGGBB` ohne `#`. LED-Indizes sind global auf dem Controller (Ausgang 1 beginnt bei 0). Spezial-Objekte nutzen die WLED-Effekte des Controllers (`effekt` / `palette` sind die Nummern aus der Weboberfläche).
+Farben sind `RRGGBB` ohne `#`. LED-Indizes sind global auf dem Controller (Ausgang 1 beginnt bei 0). `anteil` (`r`/`g`/`b`/`rgb`) ist der RGB-Anteil: so werden die drei LEDs eines Pixels unabhängig geschaltet. Spezial-Objekte nutzen die WLED-Effekte des Controllers (`effekt` / `palette` sind die Nummern aus der Weboberfläche); Effekte wirken auf das ganze Pixel.
+
+Unter `controller.namen` liegen Anzeigenamen: `led` (eine LED) oder `von`/`bis` (Bereich, inklusive, 0-basiert), optional `anteil` für eine Farbe derselben LED. In den Listen steht der Name statt `Nr. …`; mehrere Farbnamen einer LED erscheinen mit `/` getrennt. Beim Einfügen oder Entfernen im Bus werden die Namen wie die Objekt-Adressen verschoben.
+
+Fahrzeuge, Rundumlicht: `schritte` steuert, was nacheinander aufleuchtet. In der Oberfläche erscheint die Auswahl nur bei Art **Rundumlicht**.
+
+| `schritte` | Bedeutung |
+|---|---|
+| `kanaele` | RGB-Anteile nacheinander. Ein WS2811 mit `anteil: rgb` ist ein 3er-Rundum (R→G→B). Mehrere Pixel werden kanalweise weitergezählt. |
+| `leds` | Ganze LEDs nacheinander (gewählte Anteile zusammen). |
+| `auto` (Standard) | Eine LED mit mehreren Anteilen wie `kanaele`, sonst wie `leds`. |
+
+Blinker verschiedener Fahrzeuge haben unterschiedliche Perioden.
 
 ## Ports
 

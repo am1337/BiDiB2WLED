@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>BiDiB2WLED</title>
-  <link rel="stylesheet" href="/static/style.css?v=16">
+  <link rel="stylesheet" href="/static/style.css?v=21">
 </head>
 <body>
   <header>
@@ -76,6 +76,54 @@
           <button id="id-go">Diese LED blinken lassen</button>
         </div>
       </article>
+      <article>
+        <h2>4. LEDs im Bus nachtragen</h2>
+        <p id="led-bus-diff" class="led-bus-diff">WLED-Länge und Objekt-Adressen erscheinen hier, sobald ein Controller gewählt ist.</p>
+        <h3>Einfügen</h3>
+        <p>
+          Wenn du LEDs in die Kette gelötet hast: zuerst in WLED die LED-Anzahl erhöhen,
+          dann hier die Stelle angeben (z. B. nach LED 5, wenn drei neue zwischen alter LED 5 und 6 sitzen).
+          Alle Objekt-Adressen ab der nächsten LED werden hochgezählt.
+          Mehr LEDs als in WLED konfiguriert sind, lassen sich nicht anlegen.
+        </p>
+        <div class="row wrap">
+          <label>Controller <select id="ins-ctrl"></select></label>
+          <label>Ausgang <select id="ins-out"></select></label>
+          <label>Nach LED <select id="ins-after"></select></label>
+          <label>Neue LEDs <input id="ins-count" type="number" min="1" step="1" value="1"></label>
+          <button type="button" id="ins-go">Einfügen und Adressen anpassen</button>
+        </div>
+        <h3>Entfernen</h3>
+        <p>
+          Wenn du LEDs aus der Kette gelötet hast: hier die erste entfernte LED und die Anzahl angeben
+          (z. B. ab LED 6 drei Stück, wenn alte LED 6–8 fehlen).
+          Alle Objekt-Adressen danach werden heruntergezählt.
+          Eine kleinere LED-Anzahl in WLED blockiert das nicht – die Differenz wird oben angezeigt,
+          damit du an mehreren Stellen nacheinander nachtragen kannst.
+        </p>
+        <div class="row wrap">
+          <label>Controller <select id="del-ctrl"></select></label>
+          <label>Ausgang <select id="del-out"></select></label>
+          <label>Ab LED <select id="del-from"></select></label>
+          <label>Anzahl <input id="del-count" type="number" min="1" step="1" value="1"></label>
+          <button type="button" id="del-go">Entfernen und Adressen anpassen</button>
+        </div>
+      </article>
+      <article id="art-led-namen">
+        <h2 id="nam-title">5. LED-Namen</h2>
+        <p>
+          Namen für einzelne LEDs, RGB-Anteile oder Bereiche. In den Listen steht der Name
+          anstelle von „Nr. …“ (z. B. LED 1 (Straßenlaterne)). Mehrere Farbnamen erscheinen mit / getrennt
+          (LED 12 (Halt / Fahrt)). Beim Einfügen oder Entfernen im Bus wandern die Namen mit den LEDs mit.
+          Die Nummern gelten für den gewählten Ausgang (LED 1 ist die erste LED dort).
+        </p>
+        <div class="row wrap">
+          <label>Controller <select id="nam-ctrl"></select></label>
+          <label>Ausgang <select id="nam-out"></select></label>
+        </div>
+        <textarea id="nam-text" rows="6" placeholder="LED1 = Straßenlaterne&#10;3-7 = Haus3&#10;12r = Halt&#10;12g = Fahrt"></textarea>
+        <button type="button" id="nam-go">Namen speichern</button>
+      </article>
     </section>
 
     <section id="tab-objects" class="hidden">
@@ -86,6 +134,14 @@
           <label>Controller <select id="l-ctrl"></select></label>
           <label>Ausgang <select id="l-out"></select></label>
           <label>LEDs (Strg für mehrere) <select id="l-leds" multiple size="6"></select></label>
+          <label title="Rot, Grün oder Blau dieses Pixels, oder alle drei">RGB-Anteil
+            <select id="l-anteil">
+              <option value="rgb">alle (RGB)</option>
+              <option value="r">nur Rot</option>
+              <option value="g">nur Grün</option>
+              <option value="b">nur Blau</option>
+            </select>
+          </label>
           <label>Farbe
             <span class="color-field">
               <span class="color-swatch" title="Farbe wählen"></span>
@@ -112,6 +168,14 @@
           <input id="h-win-name" placeholder="Fenstername wohnzimmer">
           <label>Ausgang <select id="h-out"></select></label>
           <label>LEDs <select id="h-leds" multiple size="6"></select></label>
+          <label title="Rot, Grün oder Blau dieses Pixels, oder alle drei">RGB-Anteil
+            <select id="h-anteil">
+              <option value="rgb">alle (RGB)</option>
+              <option value="r">nur Rot</option>
+              <option value="g">nur Grün</option>
+              <option value="b">nur Blau</option>
+            </select>
+          </label>
           <label>Farbe
             <span class="color-field">
               <span class="color-swatch" title="Farbe wählen"></span>
@@ -155,7 +219,7 @@
       </article>
       <article id="art-signal">
         <h2 id="sig-title">Signal anlegen</h2>
-        <p>Begriffe über die Dropdowns wählen und „Begriff übernehmen“.</p>
+        <p>Begriffe über die Dropdowns wählen und „Begriff übernehmen“. Halt und Fahrt dürfen dieselbe LED nutzen, wenn Rot und Grün als RGB-Anteil getrennt sind – dann entsteht je Farbe ein Eintrag.</p>
         <div class="row wrap">
           <input id="sig-id" placeholder="signal-ausfahrt">
           <label>Controller <select id="sig-ctrl"></select></label>
@@ -163,8 +227,16 @@
         </div>
         <div class="row wrap">
           <input id="sig-asp-n" type="number" min="0" value="0" title="Begriff-Nummer" placeholder="Nr.">
-          <input id="sig-asp-name" placeholder="Halt">
+          <input id="sig-asp-name" placeholder="Halt" value="Halt">
           <label>LEDs <select id="sig-leds" multiple size="6"></select></label>
+          <label title="Rot, Grün oder Blau dieses Pixels, oder alle drei">RGB-Anteil
+            <select id="sig-anteil">
+              <option value="rgb">alle (RGB)</option>
+              <option value="r">nur Rot</option>
+              <option value="g">nur Grün</option>
+              <option value="b">nur Blau</option>
+            </select>
+          </label>
           <label>Farbe
             <span class="color-field">
               <span class="color-swatch" title="Farbe wählen"></span>
@@ -173,7 +245,7 @@
           </label>
           <button type="button" id="sig-asp-add" class="secondary">Begriff übernehmen</button>
         </div>
-        <textarea id="sig-asp" rows="3" placeholder="0:Halt:12=FF0000&#10;2:Fahrt:14=00FF00"></textarea>
+        <textarea id="sig-asp" rows="3" placeholder="0:Halt:12=FF0000=r&#10;1:Fahrt:12=00FF00=g"></textarea>
         <div class="row">
           <button id="sig-add">Signal speichern</button>
           <button type="button" id="sig-cancel" class="secondary hidden">Abbrechen</button>
@@ -181,12 +253,20 @@
       </article>
       <article id="art-spezial">
         <h2 id="sp-title">Spezial anlegen</h2>
-        <p>WLED-Effekt auf den gewählten LEDs. Zusammenhängende LEDs bilden ein Segment. Steuerung schaltet nur ein und aus. Bereits verwendete LEDs sind in den Listen markiert.</p>
+        <p>WLED-Effekt auf den gewählten LEDs. Zusammenhängende LEDs bilden ein Segment. Steuerung schaltet nur ein und aus. Bereits verwendete LEDs sind in den Listen markiert. WLED-Effekte wirken immer auf das ganze Pixel; der RGB-Anteil gilt beim Ausschalten.</p>
         <div class="row wrap">
           <input id="sp-id" placeholder="ID kamin-feuer">
           <label>Controller <select id="sp-ctrl"></select></label>
           <label>Ausgang <select id="sp-out"></select></label>
           <label>LEDs (Strg für mehrere) <select id="sp-leds" multiple size="6"></select></label>
+          <label title="Rot, Grün oder Blau dieses Pixels, oder alle drei">RGB-Anteil
+            <select id="sp-anteil">
+              <option value="rgb">alle (RGB)</option>
+              <option value="r">nur Rot</option>
+              <option value="g">nur Grün</option>
+              <option value="b">nur Blau</option>
+            </select>
+          </label>
         </div>
         <div class="row wrap">
           <label>Effekt <select id="sp-fx"></select></label>
@@ -201,6 +281,79 @@
           </label>
           <button id="sp-add">Spezial speichern</button>
           <button type="button" id="sp-cancel" class="secondary hidden">Abbrechen</button>
+        </div>
+      </article>
+      <article id="art-fahrzeug">
+        <h2 id="v-title">Fahrzeug anlegen</h2>
+        <p>
+          Standmodell mit Lichtkanälen. Ein Pixel hat drei RGB-Anteile (R, G, B) –
+          damit lassen sich drei einzelne LEDs unabhängig schalten.
+          Rundumlicht: entweder LEDs nacheinander oder die RGB-Anteile nacheinander
+          (ein WS2811 = drei LEDs, R→G→B). Blinker mehrerer Fahrzeuge laufen
+          absichtlich leicht unterschiedlich schnell.
+        </p>
+        <div class="row wrap">
+          <input id="v-id" placeholder="ID pkw-rot">
+          <label>Controller <select id="v-ctrl"></select></label>
+          <label>Blink-Grundperiode (s)
+            <input id="v-blink" type="number" min="0.2" step="0.05" value="0.75" title="Basis; jedes Fahrzeug weicht etwas ab">
+          </label>
+          <label>Rundum-Schritt (s)
+            <input id="v-rundum" type="number" min="0.04" step="0.02" value="0.12" title="Dauer bis zum nächsten Pixel oder Farbkanal">
+          </label>
+        </div>
+        <h3>Kanäle</h3>
+        <div class="row wrap">
+          <input id="v-ch-name" placeholder="Kanalname scheinwerfer">
+          <label>Ausgang <select id="v-out"></select></label>
+          <label>LEDs <select id="v-leds" multiple size="6"></select></label>
+          <label title="Rot, Grün oder Blau dieses Pixels, oder alle drei">RGB-Anteil
+            <select id="v-anteil">
+              <option value="rgb">alle (RGB)</option>
+              <option value="r">nur Rot</option>
+              <option value="g">nur Grün</option>
+              <option value="b">nur Blau</option>
+            </select>
+          </label>
+          <label>Farbe
+            <span class="color-field">
+              <span class="color-swatch" title="Farbe wählen"></span>
+              <input id="v-farbe" value="FFFFFF" placeholder="RRGGBB" size="8" spellcheck="false" autocomplete="off">
+            </span>
+          </label>
+          <label>Art
+            <select id="v-art">
+              <option value="dauer">Dauerlicht</option>
+              <option value="blinker">Blinker</option>
+              <option value="rundum">Rundumlicht</option>
+              <option value="blitz">Blitz</option>
+              <option value="doppelblitz">Doppelblitz</option>
+            </select>
+          </label>
+          <label id="v-schritte-wrap" title="Nur Rundumlicht: ganze Pixel oder die RGB-Pins eines WS2811 nacheinander">Rundum-Schritte
+            <select id="v-schritte">
+              <option value="auto">automatisch</option>
+              <option value="leds">LEDs nacheinander</option>
+              <option value="kanaele">RGB-Anteile nacheinander</option>
+            </select>
+          </label>
+          <button type="button" id="v-ch-add" class="secondary">Kanal übernehmen</button>
+        </div>
+        <p class="sub" id="v-rundum-hint"></p>
+        <textarea id="v-kanaele" rows="4" placeholder="scheinwerfer:30:rgb:FFFFCC:dauer&#10;blinker-l:31:r:FF8000:blinker&#10;blinker-r:31:g:FF8000:blinker&#10;rundum:33:rgb:0000FF:rundum:kanaele"></textarea>
+        <h3>Modi</h3>
+        <p>Welche Kanäle in welchem Schaltzustand aktiv sind. „Standard-Modi“ erzeugt Aus, Licht, Warnblinker und Einsatz je nach Kanalarten.</p>
+        <div class="row wrap">
+          <input id="v-mod-n" type="number" min="0" value="0" title="Modus-Nummer" placeholder="Nr.">
+          <input id="v-mod-name" placeholder="Licht">
+          <label>Kanäle <select id="v-mod-kan" multiple size="5"></select></label>
+          <button type="button" id="v-mod-add" class="secondary">Modus übernehmen</button>
+          <button type="button" id="v-mod-default" class="secondary">Standard-Modi</button>
+        </div>
+        <textarea id="v-modi" rows="3" placeholder="0:Aus:&#10;1:Licht:scheinwerfer&#10;2:Warnblinker:scheinwerfer,blinker-l,blinker-r"></textarea>
+        <div class="row">
+          <button id="v-add">Fahrzeug speichern</button>
+          <button type="button" id="v-cancel" class="secondary hidden">Abbrechen</button>
         </div>
       </article>
     </section>
@@ -236,6 +389,6 @@
       <label>B <input id="cp-b" type="number" min="0" max="255"></label>
     </div>
   </div>
-  <script src="/static/app.js?v=19"></script>
+  <script src="/static/app.js?v=33"></script>
 </body>
 </html>

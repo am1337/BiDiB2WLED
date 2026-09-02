@@ -1,5 +1,7 @@
 const $ = (sel) => document.querySelector(sel);
 const DEFAULT_COLOR = "FFFFFF";
+const ANTEIL_PRIMARY = { r: "FF0000", g: "00FF00", b: "0000FF" };
+const ANTEIL_SNAP_COLORS = new Set(["FF0000", "00FF00", "0000FF", "FFFFFF"]);
 let cfg = {};
 let status = {};
 let wizardOpened = false;
@@ -275,10 +277,13 @@ document.addEventListener("keydown", (e) => {
 
 const LED_GROUPS = [
   { ctrl: "id-ctrl", out: "id-out", led: "id-led" },
-  { ctrl: "l-ctrl", out: "l-out", led: "l-leds" },
-  { ctrl: "h-ctrl", out: "h-out", led: "h-leds" },
-  { ctrl: "sig-ctrl", out: "sig-out", led: "sig-leds" },
-  { ctrl: "sp-ctrl", out: "sp-out", led: "sp-leds" },
+  { ctrl: "ins-ctrl", out: "ins-out", led: "ins-after", insert: true },
+  { ctrl: "del-ctrl", out: "del-out", led: "del-from", remove: true },
+  { ctrl: "l-ctrl", out: "l-out", led: "l-leds", anteil: "l-anteil", farbe: "l-farbe" },
+  { ctrl: "h-ctrl", out: "h-out", led: "h-leds", anteil: "h-anteil", farbe: "h-win-farbe" },
+  { ctrl: "sig-ctrl", out: "sig-out", led: "sig-leds", anteil: "sig-anteil", farbe: "sig-farbe" },
+  { ctrl: "sp-ctrl", out: "sp-out", led: "sp-leds", anteil: "sp-anteil", farbe: "sp-farbe" },
+  { ctrl: "v-ctrl", out: "v-out", led: "v-leds", anteil: "v-anteil", farbe: "v-farbe" },
 ];
 
 function controllerByName(name) {
@@ -312,6 +317,22 @@ function ledOwners(ctrlName, globalIndex) {
   return leds[String(globalIndex)] || [];
 }
 
+function expandAnteil(anteil) {
+  if (anteil === "r" || anteil === "g" || anteil === "b") return [anteil];
+  return ["r", "g", "b"];
+}
+
+function ledOwnersForAnteil(ctrlName, globalIndex, anteil) {
+  const channels = (status.usage && status.usage.channels && status.usage.channels[ctrlName]) || {};
+  const perLed = channels[String(globalIndex)];
+  if (!perLed) return ledOwners(ctrlName, globalIndex);
+  const owners = new Set();
+  for (const component of expandAnteil(anteil || "rgb")) {
+    for (const id of perLed[component] || []) owners.add(id);
+  }
+  return [...owners];
+}
+
 function objectOwners(objId) {
   const objects = (status.usage && status.usage.objects) || {};
   return objects[objId] || [];
@@ -320,7 +341,7 @@ function objectOwners(objId) {
 function currentLedExclude() {
   const ids = new Set();
   if (!editing.kind || !editing.id) return ids;
-  if (editing.kind === "lampe" || editing.kind === "spezial" || editing.kind === "signal") {
+  if (editing.kind === "lampe" || editing.kind === "spezial" || editing.kind === "signal" || editing.kind === "fahrzeug") {
     ids.add(editing.id);
     return ids;
   }
@@ -346,6 +367,150 @@ function usedMark(owners, exclude) {
   };
 }
 
+const ANTEIL_ALIASES = {
+  r: "r",
+  rot: "r",
+  red: "r",
+  g: "g",
+  gruen: "g",
+  "grün": "g",
+  green: "g",
+  b: "b",
+  blau: "b",
+  blue: "b",
+  rgb: "rgb",
+  alle: "rgb",
+  all: "rgb",
+};
+
+function parseAnteil(value) {
+  const raw = String(value || "rgb").trim().toLowerCase();
+  return ANTEIL_ALIASES[raw] || "rgb";
+}
+
+function nameVon(item) {
+  if (item == null) return NaN;
+  if (item.von != null && item.von !== "") return Number(item.von);
+  return Number(item.led);
+}
+
+function nameBis(item) {
+  if (item == null) return NaN;
+  if (item.bis != null && item.bis !== "") return Number(item.bis);
+  return nameVon(item);
+}
+
+function controllerNames(name) {
+  const ctrl = (cfg.controller || []).find((item) => item.name === name);
+  return (ctrl && ctrl.namen) || [];
+}
+
+function smallestLedName(items) {
+  return items.slice().sort((a, b) => {
+    const span = (nameBis(a) - nameVon(a)) - (nameBis(b) - nameVon(b));
+    if (span) return span;
+    return String(a.name || "").localeCompare(String(b.name || ""), "de");
+  })[0];
+}
+
+function ledNameFor(ctrlName, index, _anteil) {
+  const covering = controllerNames(ctrlName).filter((item) => {
+    const von = nameVon(item);
+    const bis = nameBis(item);
+    return Number.isFinite(von) && Number.isFinite(bis) && von <= index && index <= bis;
+  });
+  if (!covering.length) return "";
+  const parts = [];
+  for (const component of ["r", "g", "b"]) {
+    const hits = covering.filter((item) => parseAnteil(item.anteil) === component);
+    if (hits.length) parts.push(smallestLedName(hits).name);
+  }
+  if (parts.length) return parts.join(" / ");
+  const rgb = covering.filter((item) => parseAnteil(item.anteil) === "rgb");
+  return rgb.length ? smallestLedName(rgb).name : "";
+}
+
+function ledParen(ctrlName, index) {
+  const name = ledNameFor(ctrlName, index);
+  return name || `Nr. ${index}`;
+}
+
+function parseLedNameLine(line) {
+  const raw = String(line || "").trim();
+  if (!raw || raw.startsWith("#")) return null;
+  let left;
+  let name;
+  const eq = raw.indexOf("=");
+  const colon = raw.indexOf(":");
+  if (eq >= 0 && (colon < 0 || eq < colon)) {
+    left = raw.slice(0, eq);
+    name = raw.slice(eq + 1);
+  } else if (colon >= 0) {
+    left = raw.slice(0, colon);
+    name = raw.slice(colon + 1);
+  } else {
+    const parts = raw.split(/\s+/);
+    if (parts.length < 2) return null;
+    left = parts[0];
+    name = parts.slice(1).join(" ");
+  }
+  name = name.trim();
+  left = left.trim();
+  if (!name || !left) return null;
+  const match = left.match(/^(?:led\s*)?(\d+)(?:\s*[-–]\s*(?:led\s*)?(\d+))?(?:\s*(r|g|b|rot|gruen|grün|green|blau|blue))?$/i);
+  if (!match) return null;
+  let von = Number(match[1]);
+  let bis = Number(match[2] || von);
+  if (!Number.isInteger(von) || !Number.isInteger(bis) || von < 1 || bis < 1) return null;
+  if (bis < von) [von, bis] = [bis, von];
+  return { von, bis, anteil: match[3] ? parseAnteil(match[3]) : "rgb", name };
+}
+
+function formatLedNameLine(von1, bis1, anteil, name) {
+  const span = von1 === bis1 ? String(von1) : `${von1}-${bis1}`;
+  const color = !anteil || anteil === "rgb" ? "" : anteil;
+  return `${span}${color} = ${name}`;
+}
+
+function outputRange(ctrlName, outId) {
+  const outs = outputsOf(ctrlName);
+  const out = outs.find((item) => String(item.id) === String(outId)) || outs[0];
+  if (out) {
+    const len = Number(out.len) || 0;
+    return { start: out.start || 0, end: (out.start || 0) + len, out };
+  }
+  const ctrl = (cfg.controller || []).find((item) => item.name === ctrlName);
+  const n = (ctrl && ctrl.leds) || 0;
+  return { start: 0, end: n, out: null };
+}
+
+function fillLedNameText() {
+  const ta = $("#nam-text");
+  if (!ta) return;
+  if (document.activeElement === ta) return;
+  const ctrlName = $("#nam-ctrl") && $("#nam-ctrl").value;
+  const range = outputRange(ctrlName, $("#nam-out") && $("#nam-out").value);
+  const end = range.end > range.start ? range.end : Number.POSITIVE_INFINITY;
+  const lines = controllerNames(ctrlName)
+    .filter((item) => {
+      const von = nameVon(item);
+      return Number.isFinite(von) && von >= range.start && von < end;
+    })
+    .map((item) => {
+      const von1 = nameVon(item) - range.start + 1;
+      const bis1 = nameBis(item) - range.start + 1;
+      return formatLedNameLine(von1, bis1, parseAnteil(item.anteil), item.name);
+    });
+  ta.value = lines.join("\n");
+}
+
+function fillLedNameEditor() {
+  const ctrlEl = $("#nam-ctrl");
+  if (!ctrlEl) return;
+  fillOutputSelect("nam-out", ctrlEl.value);
+  fillLedNameText();
+}
+
 function fillOutputSelect(outId, ctrlName) {
   const el = document.getElementById(outId);
   const outs = outputsOf(ctrlName);
@@ -356,24 +521,43 @@ function fillOutputSelect(outId, ctrlName) {
   );
 }
 
-function fillLedSelect(ledId, ctrlName, outId) {
+function highestConfigLed(ctrlName) {
+  const leds = (status.usage && status.usage.leds && status.usage.leds[ctrlName]) || {};
+  const keys = Object.keys(leds).map(Number).filter(Number.isFinite);
+  return keys.length ? Math.max(...keys) : -1;
+}
+
+function fillLedSelect(ledId, ctrlName, outId, anteilId, insert, remove) {
   const el = document.getElementById(ledId);
   if (!el) return;
   const outs = outputsOf(ctrlName);
   const out = outs.find((item) => String(item.id) === String(outId)) || outs[0];
   const selected = new Set([...el.selectedOptions].map((opt) => opt.value));
-  if (!out || !out.len) {
-    el.innerHTML = '<option value="">Keine LEDs</option>';
+  const wledLen = out && out.len ? out.len : 0;
+  const start = out ? out.start : 0;
+  const highest = highestConfigLed(ctrlName);
+  const end = remove ? Math.max(start + wledLen, highest + 1) : start + wledLen;
+  const count = Math.max(0, end - start);
+  if (!out || !count) {
+    el.innerHTML = insert
+      ? '<option value="-1">am Anfang (vor LED 1)</option>'
+      : '<option value="">Keine LEDs</option>';
+    showChosenLeds(el);
     return;
   }
   const exclude = currentLedExclude();
-  el.innerHTML = Array.from({ length: out.len }, (_, i) => {
-    const global = out.start + i;
-    const mark = usedMark(ledOwners(ctrlName, global), exclude);
+  const anteil = anteilId && document.getElementById(anteilId) ? document.getElementById(anteilId).value : "rgb";
+  const options = Array.from({ length: count }, (_, i) => {
+    const global = start + i;
+    const mark = usedMark(ledOwnersForAnteil(ctrlName, global, anteil), exclude);
     const cls = mark.used ? ' class="opt-used"' : "";
     const title = mark.title ? ` title="${esc(mark.title)}"` : "";
-    return `<option value="${i}"${cls}${title}>LED ${i + 1} (Nr. ${global})${mark.suffix}</option>`;
-  }).join("");
+    const beyond = i >= wledLen ? " · nur Konfiguration" : "";
+    const label = `LED ${i + 1} (${esc(ledParen(ctrlName, global))})${mark.suffix}${beyond}`;
+    return `<option value="${i}"${cls}${title}>${label}</option>`;
+  });
+  if (insert) options.unshift('<option value="-1">am Anfang (vor LED 1)</option>');
+  el.innerHTML = options.join("");
   if (el.multiple) {
     [...el.options].forEach((opt) => {
       opt.selected = selected.has(opt.value);
@@ -381,6 +565,8 @@ function fillLedSelect(ledId, ctrlName, outId) {
   } else if (selected.size && [...el.options].some((opt) => selected.has(opt.value))) {
     el.value = [...selected][0];
   }
+  scrollSelectToSelection(el);
+  showChosenLeds(el);
 }
 
 function selectedLocals(ledId) {
@@ -400,13 +586,13 @@ function syncLedDropdowns() {
     const out = document.getElementById(group.out);
     if (!ctrl) continue;
     fillOutputSelect(group.out, ctrl.value);
-    fillLedSelect(group.led, ctrl.value, out && out.value);
+    fillLedSelect(group.led, ctrl.value, out && out.value, group.anteil, group.insert, group.remove);
   }
 }
 
 function fillCtrlSelects() {
   const names = (cfg.controller || []).map((c) => c.name).filter(Boolean);
-  for (const id of ["id-ctrl", "l-ctrl", "h-ctrl", "sig-ctrl", "sp-ctrl"]) {
+  for (const id of ["id-ctrl", "ins-ctrl", "del-ctrl", "nam-ctrl", "l-ctrl", "h-ctrl", "sig-ctrl", "sp-ctrl", "v-ctrl"]) {
     const el = document.getElementById(id);
     if (!el) continue;
     const current = el.value;
@@ -418,7 +604,10 @@ function fillCtrlSelects() {
     el.value = names.includes(current) ? current : names[0];
   }
   syncLedDropdowns();
+  fillLedNameEditor();
   fillSpecialFx($("#sp-ctrl") && $("#sp-ctrl").value);
+  renderLedBusDiff();
+  updateRundumHint();
 }
 
 function fillNamedSelect(el, names, current, emptyLabel) {
@@ -468,6 +657,7 @@ function groupMemberSections(excludeId) {
   add("Fenster", windows);
   add("Signale", Object.keys(cfg.signale || {}));
   add("Spezial", Object.keys(cfg.spezial || {}));
+  add("Fahrzeuge", Object.keys(cfg.fahrzeuge || {}));
   add("Gruppen", Object.keys(cfg.gruppen || {}));
   add("Sequenzen", Object.keys(cfg.sequenzen || {}));
   return sections;
@@ -548,15 +738,45 @@ for (const group of LED_GROUPS) {
     ctrl.addEventListener("change", () => {
       fillOutputSelect(group.out, ctrl.value);
       const next = document.getElementById(group.out);
-      fillLedSelect(group.led, ctrl.value, next && next.value);
+      fillLedSelect(group.led, ctrl.value, next && next.value, group.anteil, group.insert, group.remove);
       if (group.ctrl === "sp-ctrl") fillSpecialFx(ctrl.value);
+      if (group.insert || group.remove) renderLedBusDiff(ctrl.value);
     });
   }
   if (out) {
     out.addEventListener("change", () => {
-      fillLedSelect(group.led, document.getElementById(group.ctrl).value, out.value);
+      fillLedSelect(group.led, document.getElementById(group.ctrl).value, out.value, group.anteil, group.insert, group.remove);
     });
   }
+  if (group.anteil) {
+    const anteil = document.getElementById(group.anteil);
+    if (anteil) {
+      anteil.addEventListener("change", () => {
+        if (group.farbe) syncFarbeToAnteil(group.farbe, anteil.value);
+        const ctrlEl = document.getElementById(group.ctrl);
+        const outEl = document.getElementById(group.out);
+        fillLedSelect(group.led, ctrlEl && ctrlEl.value, outEl && outEl.value, group.anteil, group.insert, group.remove);
+        if (group.led === "v-leds") updateRundumHint();
+      });
+    }
+  }
+  const ledEl = document.getElementById(group.led);
+  if (ledEl) {
+    ledEl.addEventListener("change", () => {
+      showChosenLeds(ledEl);
+      if (group.led === "v-leds") updateRundumHint();
+    });
+  }
+}
+
+if ($("#nam-ctrl")) {
+  $("#nam-ctrl").addEventListener("change", () => {
+    fillOutputSelect("nam-out", $("#nam-ctrl").value);
+    fillLedNameText();
+  });
+}
+if ($("#nam-out")) {
+  $("#nam-out").addEventListener("change", fillLedNameText);
 }
 
 function pairingStatus(b) {
@@ -605,6 +825,7 @@ function renderStatus() {
     })
     .join("") || "<p>Noch kein Controller übernommen.</p>";
   renderObjects();
+  renderLedBusDiff();
 }
 
 function esc(s) {
@@ -712,6 +933,7 @@ async function refresh(force = false) {
   fillCtrlSelects();
   fillGroupMemberSelect();
   fillSequenceGroupSelect();
+  fillVehicleModeChannels();
   if (status.wizard && !wizardOpened) {
     wizardOpened = true;
     showTab("wizard");
@@ -868,6 +1090,150 @@ $("#id-go").onclick = () => runAction("LED blinkt", async () => {
   });
 });
 
+function ledBusDiffText(ctrlName) {
+  const ctrl = controllerByName(ctrlName);
+  if (!ctrlName || !ctrl) return "WLED-Länge und Objekt-Adressen erscheinen hier, sobald ein Controller gewählt ist.";
+  const wled = Number(ctrl.leds) || 0;
+  const highest = highestConfigLed(ctrlName);
+  const span = highest + 1;
+  const delta = span - wled;
+  if (!wled && span <= 0) return "Noch keine LEDs bekannt.";
+  if (delta === 0) {
+    return `WLED und Konfiguration: ${wled} LED${wled === 1 ? "" : "s"}.`;
+  }
+  if (delta > 0) {
+    return (
+      `WLED: ${wled} LEDs. Höchste Objekt-Adresse: Nr. ${highest} (${span} in der Konfiguration). ` +
+      `Differenz: ${delta} – in mehreren Schritten entfernen oder in WLED anpassen.`
+    );
+  }
+  return `WLED: ${wled} LEDs. Objekte bis Nr. ${Math.max(highest, 0)}. ${-delta} LED(s) in WLED ohne Objekt.`;
+}
+
+function renderLedBusDiff(name) {
+  const el = $("#led-bus-diff");
+  if (!el) return;
+  const ins = $("#ins-ctrl") && $("#ins-ctrl").value;
+  const del = $("#del-ctrl") && $("#del-ctrl").value;
+  const names = [];
+  for (const n of [name, del, ins]) {
+    if (n && !names.includes(n)) names.push(n);
+  }
+  if (!names.length) {
+    el.textContent = ledBusDiffText("");
+    return;
+  }
+  el.innerHTML = names
+    .map((n) => `<div><strong>${esc(n)}:</strong> ${esc(ledBusDiffText(n))}</div>`)
+    .join("");
+}
+
+$("#ins-go").onclick = () => runAction("LED-Adressen angepasst", async () => {
+  const controller = $("#ins-ctrl").value;
+  const output = Number($("#ins-out").value);
+  const after = Number($("#ins-after").value);
+  const count = Number($("#ins-count").value);
+  if (!controller) throw new Error("Bitte einen Controller wählen.");
+  if (!Number.isInteger(after) || after < -1) throw new Error("Bitte die LED wählen, nach der eingefügt wird.");
+  if (!Number.isInteger(count) || count < 1) throw new Error("Anzahl muss mindestens 1 sein.");
+  const out = outputsOf(controller).find((item) => String(item.id) === String(output));
+  const start = out ? out.start : 0;
+  const first = start + after + 1;
+  const wled = (controllerByName(controller) && controllerByName(controller).leds) || 0;
+  const where = after < 0 ? "am Anfang" : `nach LED ${after + 1} (${ledParen(controller, start + after)})`;
+  const ok = window.confirm(
+    `${count} LED(s) ${where} einfügen.\nAlle Objekt-Adressen ab Nr. ${first} werden um ${count} erhöht.\nWLED hat derzeit ${wled} LEDs.`
+  );
+  if (!ok) return false;
+  const data = await api("/api/leds/insert", {
+    method: "POST",
+    body: JSON.stringify({ controller, output, after, count }),
+  });
+  status = data.status || (await api("/api/status"));
+  cfg = await api("/api/config");
+  renderStatus();
+  fillCtrlSelects();
+  const extra = data.delta ? ` · Differenz zu WLED: ${data.delta}` : "";
+  notify(`${data.shifted || 0} LED-Adresse(n) verschoben${extra}`, true);
+  return false;
+});
+
+$("#del-go").onclick = () => runAction("LED-Adressen angepasst", async () => {
+  const controller = $("#del-ctrl").value;
+  const output = Number($("#del-out").value);
+  const startAt = Number($("#del-from").value);
+  const count = Number($("#del-count").value);
+  if (!controller) throw new Error("Bitte einen Controller wählen.");
+  if (!Number.isInteger(startAt) || startAt < 0) throw new Error("Bitte die erste zu löschende LED wählen.");
+  if (!Number.isInteger(count) || count < 1) throw new Error("Anzahl muss mindestens 1 sein.");
+  const out = outputsOf(controller).find((item) => String(item.id) === String(output));
+  const start = out ? out.start : 0;
+  const first = start + startAt;
+  const wled = (controllerByName(controller) && controllerByName(controller).leds) || 0;
+  const span = highestConfigLed(controller) + 1;
+  const owners = [];
+  for (let i = 0; i < count; i += 1) {
+    for (const id of ledOwners(controller, first + i)) {
+      if (!owners.includes(id)) owners.push(id);
+    }
+  }
+  const ownerLine = owners.length
+    ? `\nObjekte auf diesen LEDs: ${owners.join(", ")} – deren Adressen auf den entfernten LEDs entfallen.`
+    : "";
+  const ok = window.confirm(
+    `${count} LED(s) ab LED ${startAt + 1} (${ledParen(controller, first)}) entfernen.\n` +
+      `Objekt-Adressen ab Nr. ${first + count} werden um ${count} verringert.\n` +
+      `WLED: ${wled} LEDs, Konfiguration ${span}. Differenz: ${span - wled}.` +
+      ownerLine
+  );
+  if (!ok) return false;
+  const data = await api("/api/leds/delete", {
+    method: "POST",
+    body: JSON.stringify({ controller, output, start: startAt, count }),
+  });
+  status = data.status || (await api("/api/status"));
+  cfg = await api("/api/config");
+  renderStatus();
+  fillCtrlSelects();
+  const parts = [`${data.shifted || 0} Adresse(n) heruntergezählt`];
+  if (data.dropped) parts.push(`${data.dropped} entfernt`);
+  if (data.delta) parts.push(`Differenz zu WLED: ${data.delta}`);
+  notify(parts.join(" · "), true);
+  return false;
+});
+
+$("#nam-go").onclick = () => runAction("LED-Namen gespeichert", async () => {
+  const controller = $("#nam-ctrl") && $("#nam-ctrl").value;
+  if (!controller) throw new Error("Bitte einen Controller wählen.");
+  const range = outputRange(controller, $("#nam-out") && $("#nam-out").value);
+  const end = range.end > range.start ? range.end : Number.POSITIVE_INFINITY;
+  const parsed = [];
+  for (const raw of String($("#nam-text") && $("#nam-text").value || "").split("\n")) {
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const line = parseLedNameLine(trimmed);
+    if (!line) throw new Error(`Zeile nicht verstanden: ${trimmed}`);
+    parsed.push({
+      von: range.start + line.von - 1,
+      bis: range.start + line.bis - 1,
+      anteil: line.anteil,
+      name: line.name,
+    });
+  }
+  const next = await api("/api/config");
+  const ctrl = (next.controller || []).find((item) => item.name === controller);
+  if (!ctrl) throw new Error("Controller nicht gefunden.");
+  const kept = (ctrl.namen || []).filter((item) => {
+    const von = nameVon(item);
+    return !(Number.isFinite(von) && von >= range.start && von < end);
+  });
+  ctrl.namen = kept.concat(parsed);
+  await api("/api/config", { method: "PUT", body: JSON.stringify(next) });
+  cfg = await api("/api/config");
+  renderStatus();
+  fillCtrlSelects();
+});
+
 function parseLeds(text) {
   return text.split(/[,\s]+/).filter(Boolean).map((x) => Number(x));
 }
@@ -880,6 +1246,76 @@ function setColorInput(id, hex) {
   if (field) syncSwatch(field, input.value);
 }
 
+function syncFarbeToAnteil(colorId, anteil) {
+  const target = ANTEIL_PRIMARY[anteil];
+  if (!target || !colorId) return;
+  const input = document.getElementById(colorId);
+  if (!input) return;
+  const current = parseHex(input.value);
+  if (current && !ANTEIL_SNAP_COLORS.has(current)) return;
+  setColorInput(colorId, target);
+}
+
+function nextAspectNumber(begriffe) {
+  const keys = Object.keys(begriffe || {}).map(Number).filter(Number.isFinite);
+  return keys.length ? Math.max(...keys) + 1 : 0;
+}
+
+function parseSignalBegriffe(text) {
+  const begriffe = {};
+  for (const line of String(text || "").split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
+    const [aspRaw, name, rest] = t.split(":");
+    const asp = Number(aspRaw);
+    if (!Number.isFinite(asp)) continue;
+    if (!begriffe[asp]) {
+      begriffe[asp] = { name: (name || String(asp)).trim(), leds: {}, anteile: {} };
+    } else if (name && name.trim()) {
+      begriffe[asp].name = name.trim();
+    }
+    for (const part of (rest || "").split(",")) {
+      const bits = part.split("=").map((bit) => bit.trim());
+      const idx = Number(bits[0]);
+      if (!Number.isFinite(idx) || bits[0] === "") continue;
+      begriffe[asp].leds[idx] = parseHex(bits[1]) || "FF0000";
+      const anteil = (bits[2] || "rgb").toLowerCase();
+      if (anteil && anteil !== "rgb") begriffe[asp].anteile[idx] = anteil;
+      else delete begriffe[asp].anteile[idx];
+    }
+  }
+  return begriffe;
+}
+
+function compactSignalBegriffe(begriffe) {
+  for (const begriff of Object.values(begriffe || {})) {
+    if (begriff.anteile && !Object.keys(begriff.anteile).length) delete begriff.anteile;
+  }
+  return begriffe;
+}
+
+function scrollSelectToSelection(select) {
+  if (!select || !select.size || select.size < 2) return;
+  const option = select.selectedOptions[0];
+  if (!option || !select.options.length) return;
+  const avg = select.scrollHeight / select.options.length;
+  select.scrollTop = Math.max(0, option.index * avg - select.clientHeight / 3);
+}
+
+function showChosenLeds(el) {
+  if (!el) return;
+  let hint = el.parentElement && el.parentElement.querySelector(":scope > .led-chosen");
+  if (!hint) {
+    hint = document.createElement("span");
+    hint.className = "led-chosen";
+    el.insertAdjacentElement("afterend", hint);
+  }
+  const labels = [...el.selectedOptions]
+    .map((opt) => opt.textContent.replace(/\s+· in Verwendung.*$/, "").trim())
+    .filter(Boolean);
+  hint.textContent = labels.length ? `gewählt: ${labels.join(", ")}` : "";
+}
+
 function selectLocals(ledId, locals) {
   const el = document.getElementById(ledId);
   if (!el) return;
@@ -887,6 +1323,8 @@ function selectLocals(ledId, locals) {
   [...el.options].forEach((opt) => {
     opt.selected = want.has(opt.value);
   });
+  scrollSelectToSelection(el);
+  showChosenLeds(el);
 }
 
 function locateLeds(ctrlName, globals) {
@@ -914,6 +1352,7 @@ const EDIT_META = {
   sequenz: { title: "s-title", create: "Sequenz anlegen", edit: "Sequenz bearbeiten", art: "art-sequenz", cancel: "s-cancel" },
   signal: { title: "sig-title", create: "Signal anlegen", edit: "Signal bearbeiten", art: "art-signal", cancel: "sig-cancel" },
   spezial: { title: "sp-title", create: "Spezial anlegen", edit: "Spezial bearbeiten", art: "art-spezial", cancel: "sp-cancel" },
+  fahrzeug: { title: "v-title", create: "Fahrzeug anlegen", edit: "Fahrzeug bearbeiten", art: "art-fahrzeug", cancel: "v-cancel" },
 };
 
 function setEditing(kind, id) {
@@ -994,6 +1433,9 @@ function removeObjectFromConfig(cfg, id) {
   } else if (cfg.spezial && cfg.spezial[id]) {
     delete cfg.spezial[id];
     removed.push(id);
+  } else if (cfg.fahrzeuge && cfg.fahrzeuge[id]) {
+    delete cfg.fahrzeuge[id];
+    removed.push(id);
   } else if (id.includes(".")) {
     const houseId = id.split(".")[0];
     const win = id.slice(houseId.length + 1);
@@ -1015,7 +1457,10 @@ function replaceKey(map, oldId, newId, value) {
 
 function fensterToText(fenster) {
   return Object.entries(fenster || {})
-    .map(([name, win]) => `${name}:${(win.leds || []).join(",")}:${win.farbe || DEFAULT_COLOR}`)
+    .map(([name, win]) => {
+      const anteil = win.anteil && win.anteil !== "rgb" ? `:${win.anteil}` : "";
+      return `${name}:${(win.leds || []).join(",")}:${win.farbe || DEFAULT_COLOR}${anteil}`;
+    })
     .join("\n");
 }
 
@@ -1024,21 +1469,25 @@ function parseFensterLines(text) {
   for (const raw of String(text || "").split("\n")) {
     const t = raw.trim();
     if (!t) continue;
-    const [name, leds, farbe] = t.split(":");
+    const [name, leds, farbe, anteil] = t.split(":");
     if (!name) continue;
-    lines.push({ name, leds: leds || "", farbe: (farbe || DEFAULT_COLOR).trim() });
+    lines.push({ name, leds: leds || "", farbe: (farbe || DEFAULT_COLOR).trim(), anteil: anteil || "rgb" });
   }
   return lines;
 }
 
 function fensterLinesToText(lines) {
-  return lines.map((win) => `${win.name}:${win.leds}:${win.farbe}`).join("\n");
+  return lines.map((win) => `${win.name}:${win.leds}:${win.farbe}${win.anteil && win.anteil !== "rgb" ? `:${win.anteil}` : ""}`).join("\n");
 }
 
 function begriffeToText(begriffe) {
   return Object.entries(begriffe || {})
+    .sort(([a], [b]) => Number(a) - Number(b))
     .map(([asp, b]) => {
-      const leds = Object.entries(b.leds || {}).map(([idx, col]) => `${idx}=${col}`).join(",");
+      const leds = Object.entries(b.leds || {}).map(([idx, col]) => {
+        const anteil = (b.anteile && (b.anteile[idx] || b.anteile[Number(idx)])) || "rgb";
+        return anteil === "rgb" ? `${idx}=${col}` : `${idx}=${col}=${anteil}`;
+      }).join(",");
       return `${asp}:${b.name || asp}:${leds}`;
     })
     .join("\n");
@@ -1049,9 +1498,10 @@ function loadLamp(id, lamp) {
   $("#l-ctrl").value = lamp.controller;
   setEditing("lampe", id);
   fillOutputSelect("l-out", lamp.controller);
+  if ($("#l-anteil")) $("#l-anteil").value = lamp.anteil || "rgb";
   const located = locateLeds(lamp.controller, lamp.leds || []);
   $("#l-out").value = located.outId;
-  fillLedSelect("l-leds", lamp.controller, located.outId);
+  fillLedSelect("l-leds", lamp.controller, located.outId, "l-anteil");
   selectLocals("l-leds", located.locals);
   setColorInput("l-farbe", lamp.farbe || DEFAULT_COLOR);
   $("#art-lampe").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1070,11 +1520,13 @@ function loadHouse(id, house, windowId) {
   if (win) {
     const located = locateLeds(house.controller, win.leds || []);
     $("#h-out").value = located.outId;
-    fillLedSelect("h-leds", house.controller, located.outId);
+    if ($("#h-anteil")) $("#h-anteil").value = win.anteil || "rgb";
+    fillLedSelect("h-leds", house.controller, located.outId, "h-anteil");
     selectLocals("h-leds", located.locals);
     setColorInput("h-win-farbe", win.farbe || DEFAULT_COLOR);
   } else {
-    fillLedSelect("h-leds", house.controller, $("#h-out").value);
+    fillLedSelect("h-leds", house.controller, $("#h-out").value, "h-anteil");
+    if ($("#h-anteil")) $("#h-anteil").value = "rgb";
     setColorInput("h-win-farbe", DEFAULT_COLOR);
   }
   $("#art-haus").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1105,8 +1557,13 @@ function loadSignal(id, signal) {
   $("#sig-ctrl").value = signal.controller;
   setEditing("signal", id);
   fillOutputSelect("sig-out", signal.controller);
-  fillLedSelect("sig-leds", signal.controller, $("#sig-out").value);
+  fillLedSelect("sig-leds", signal.controller, $("#sig-out").value, "sig-anteil");
   $("#sig-asp").value = begriffeToText(signal.begriffe);
+  $("#sig-asp-n").value = "0";
+  $("#sig-asp-name").value = "Halt";
+  $("#sig-asp-name").placeholder = "Halt";
+  if ($("#sig-anteil")) $("#sig-anteil").value = "rgb";
+  setColorInput("sig-farbe", "FF0000");
   $("#art-signal").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -1118,7 +1575,8 @@ function loadSpecial(id, spec) {
   fillSpecialFx(spec.controller);
   const located = locateLeds(spec.controller, spec.leds || []);
   $("#sp-out").value = located.outId;
-  fillLedSelect("sp-leds", spec.controller, located.outId);
+  if ($("#sp-anteil")) $("#sp-anteil").value = spec.anteil || "rgb";
+  fillLedSelect("sp-leds", spec.controller, located.outId, "sp-anteil");
   selectLocals("sp-leds", located.locals);
   $("#sp-fx").value = String(spec.effekt ?? 0);
   $("#sp-pal").value = String(spec.palette ?? 0);
@@ -1126,6 +1584,152 @@ function loadSpecial(id, spec) {
   $("#sp-ix").value = String(spec.intensitaet ?? 128);
   setColorInput("sp-farbe", spec.farbe || DEFAULT_COLOR);
   $("#art-spezial").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function kanaeleToText(kanaele) {
+  return Object.entries(kanaele || {})
+    .map(([name, ch]) => {
+      const base = `${name}:${(ch.leds || []).join(",")}:${ch.anteil || "rgb"}:${ch.farbe || DEFAULT_COLOR}:${ch.art || "dauer"}`;
+      return ch.schritte && ch.schritte !== "auto" ? `${base}:${ch.schritte}` : base;
+    })
+    .join("\n");
+}
+
+function parseKanaelLines(text) {
+  const lines = [];
+  for (const raw of String(text || "").split("\n")) {
+    const t = raw.trim();
+    if (!t) continue;
+    const parts = t.split(":");
+    const name = parts[0];
+    if (!name) continue;
+    lines.push({
+      name,
+      leds: parts[1] || "",
+      anteil: parts[2] || "rgb",
+      farbe: (parts[3] || DEFAULT_COLOR).trim(),
+      art: parts[4] || "dauer",
+      schritte: parts[5] || "auto",
+    });
+  }
+  return lines;
+}
+
+function kanaelLinesToText(lines) {
+  return lines.map((ch) => {
+    const base = `${ch.name}:${ch.leds}:${ch.anteil}:${ch.farbe}:${ch.art}`;
+    return ch.schritte && ch.schritte !== "auto" ? `${base}:${ch.schritte}` : base;
+  }).join("\n");
+}
+
+function updateRundumHint() {
+  const wrap = $("#v-schritte-wrap");
+  const art = $("#v-art") && $("#v-art").value;
+  const isRundum = art === "rundum";
+  if (wrap) wrap.classList.toggle("hidden", !isRundum);
+  const hint = $("#v-rundum-hint");
+  if (!hint) return;
+  if (!isRundum) {
+    hint.textContent = "";
+    return;
+  }
+  const n = selectedLocals("v-leds").length;
+  const anteil = ($("#v-anteil") && $("#v-anteil").value) || "rgb";
+  const schritte = ($("#v-schritte") && $("#v-schritte").value) || "auto";
+  const comps = anteil === "r" || anteil === "g" || anteil === "b" ? 1 : 3;
+  if (!n) {
+    hint.textContent = "WS2811 als 3er-Rundum: eine LED, RGB-Anteil „alle“, Schritte „RGB-Anteile nacheinander“.";
+    return;
+  }
+  const walk = schritte === "kanaele" || (schritte !== "leds" && n === 1 && comps > 1);
+  const steps = walk ? n * comps : n;
+  hint.textContent = walk
+    ? `${steps} Schritte über RGB-Anteile – ein WS2811 mit „alle (RGB)“ ist ein 3er-Rundum (R→G→B).`
+    : `${steps} Schritte, je eine LED (gewählte RGB-Anteile zusammen).`;
+}
+
+function modiToText(modi) {
+  return Object.entries(modi || {})
+    .map(([n, m]) => `${n}:${m.name || n}:${(m.kanaele || []).join(",")}`)
+    .join("\n");
+}
+
+function parseModiLines(text) {
+  const lines = [];
+  for (const raw of String(text || "").split("\n")) {
+    const t = raw.trim();
+    if (!t) continue;
+    const [n, name, rest] = t.split(":");
+    lines.push({
+      n: n || "0",
+      name: name || n || "Aus",
+      kanaele: (rest || "").split(",").map((s) => s.trim()).filter(Boolean),
+    });
+  }
+  return lines;
+}
+
+function modiLinesToText(lines) {
+  return lines.map((m) => `${m.n}:${m.name}:${m.kanaele.join(",")}`).join("\n");
+}
+
+function defaultVehicleModi(lines) {
+  const dauer = lines.filter((ch) => ch.art === "dauer").map((ch) => ch.name);
+  const blinker = lines.filter((ch) => ch.art === "blinker").map((ch) => ch.name);
+  const einsatz = lines.filter((ch) => ["rundum", "blitz", "doppelblitz"].includes(ch.art)).map((ch) => ch.name);
+  const modi = [{ n: "0", name: "Aus", kanaele: [] }];
+  let next = 1;
+  if (dauer.length) {
+    modi.push({ n: String(next++), name: "Licht", kanaele: [...dauer] });
+  }
+  if (blinker.length) {
+    modi.push({ n: String(next++), name: "Warnblinker", kanaele: [...dauer, ...blinker] });
+  }
+  if (einsatz.length) {
+    modi.push({ n: String(next++), name: "Einsatz", kanaele: [...dauer, ...einsatz] });
+  }
+  if (modi.length === 1 && lines.length) {
+    modi.push({ n: "1", name: "An", kanaele: lines.map((ch) => ch.name) });
+  }
+  return modi;
+}
+
+function fillVehicleModeChannels(selected) {
+  const el = $("#v-mod-kan");
+  if (!el) return;
+  const keep = selected
+    ? new Set(selected.map(String))
+    : new Set([...el.selectedOptions].map((opt) => opt.value));
+  const names = parseKanaelLines($("#v-kanaele") && $("#v-kanaele").value).map((ch) => ch.name);
+  if (!names.length) {
+    el.innerHTML = '<option value="">Keine Kanäle übernommen</option>';
+    el.disabled = true;
+    return;
+  }
+  el.disabled = false;
+  el.innerHTML = names.map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join("");
+  [...el.options].forEach((opt) => {
+    opt.selected = keep.has(opt.value);
+  });
+}
+
+function loadVehicle(id, vehicle) {
+  $("#v-id").value = id;
+  $("#v-ctrl").value = vehicle.controller;
+  setEditing("fahrzeug", id);
+  fillOutputSelect("v-out", vehicle.controller);
+  fillLedSelect("v-leds", vehicle.controller, $("#v-out").value, "v-anteil");
+  $("#v-kanaele").value = kanaeleToText(vehicle.kanaele);
+  const modi = vehicle.modi && Object.keys(vehicle.modi).length ? vehicle.modi : null;
+  $("#v-modi").value = modi ? modiToText(modi) : modiLinesToText(defaultVehicleModi(parseKanaelLines($("#v-kanaele").value)));
+  $("#v-blink").value = String(durationSeconds(vehicle.blink_periode, 0.75));
+  $("#v-rundum").value = String(durationSeconds(vehicle.rundum_schritt, 0.12));
+  fillVehicleModeChannels();
+  $("#v-ch-name").value = "";
+  setColorInput("v-farbe", DEFAULT_COLOR);
+  if ($("#v-schritte")) $("#v-schritte").value = "auto";
+  updateRundumHint();
+  $("#art-fahrzeug").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function startEdit(id) {
@@ -1145,6 +1749,7 @@ function startEdit(id) {
   if (kind === "sequenz" && cfg.sequenzen && cfg.sequenzen[id]) return loadSequence(id, cfg.sequenzen[id]);
   if (kind === "signal" && cfg.signale && cfg.signale[id]) return loadSignal(id, cfg.signale[id]);
   if (kind === "spezial" && cfg.spezial && cfg.spezial[id]) return loadSpecial(id, cfg.spezial[id]);
+  if (kind === "fahrzeug" && cfg.fahrzeuge && cfg.fahrzeuge[id]) return loadVehicle(id, cfg.fahrzeuge[id]);
   notify("Objekt konnte nicht geladen werden.", false);
 }
 
@@ -1152,11 +1757,13 @@ function cancelEdit(kind) {
   if (kind === "lampe") {
     $("#l-id").value = "";
     setColorInput("l-farbe", DEFAULT_COLOR);
+    if ($("#l-anteil")) $("#l-anteil").value = "rgb";
   } else if (kind === "haus") {
     $("#h-id").value = "";
     $("#h-win-name").value = "";
     $("#h-fenster").value = "";
     setColorInput("h-win-farbe", DEFAULT_COLOR);
+    if ($("#h-anteil")) $("#h-anteil").value = "rgb";
     editingWindow = null;
   } else if (kind === "gruppe") {
     $("#g-id").value = "";
@@ -1169,10 +1776,12 @@ function cancelEdit(kind) {
   } else if (kind === "signal") {
     $("#sig-id").value = "";
     $("#sig-asp").value = "";
-    $("#sig-asp-name").value = "";
+    $("#sig-asp-name").value = "Halt";
+    $("#sig-asp-name").placeholder = "Halt";
     setColorInput("sig-farbe", "FF0000");
     const aspN = $("#sig-asp-n");
     if (aspN) aspN.value = "0";
+    if ($("#sig-anteil")) $("#sig-anteil").value = "rgb";
   } else if (kind === "spezial") {
     $("#sp-id").value = "";
     $("#sp-sx").value = "128";
@@ -1180,6 +1789,21 @@ function cancelEdit(kind) {
     setColorInput("sp-farbe", DEFAULT_COLOR);
     if ($("#sp-fx")) $("#sp-fx").selectedIndex = 0;
     if ($("#sp-pal")) $("#sp-pal").selectedIndex = 0;
+    if ($("#sp-anteil")) $("#sp-anteil").value = "rgb";
+  } else if (kind === "fahrzeug") {
+    $("#v-id").value = "";
+    $("#v-ch-name").value = "";
+    $("#v-kanaele").value = "";
+    $("#v-modi").value = "";
+    $("#v-mod-n").value = "0";
+    $("#v-mod-name").value = "";
+    $("#v-blink").value = "0.75";
+    $("#v-rundum").value = "0.12";
+    setColorInput("v-farbe", DEFAULT_COLOR);
+    if ($("#v-anteil")) $("#v-anteil").value = "rgb";
+    if ($("#v-schritte")) $("#v-schritte").value = "auto";
+    fillVehicleModeChannels([]);
+    updateRundumHint();
   }
   setEditing(null, null);
 }
@@ -1270,6 +1894,7 @@ $("#g-cancel").onclick = () => cancelEdit("gruppe");
 $("#s-cancel").onclick = () => cancelEdit("sequenz");
 $("#sig-cancel").onclick = () => cancelEdit("signal");
 $("#sp-cancel").onclick = () => cancelEdit("spezial");
+$("#v-cancel").onclick = () => cancelEdit("fahrzeug");
 
 $("#l-add").onclick = () => {
   const updating = editing.kind === "lampe" && editing.id;
@@ -1284,6 +1909,7 @@ $("#l-add").onclick = () => {
       controller: $("#l-ctrl").value,
       leds,
       farbe: parseHex($("#l-farbe").value) || DEFAULT_COLOR,
+      anteil: $("#l-anteil") ? $("#l-anteil").value || "rgb" : "rgb",
     });
     if (updating) retargetRefs(next, editing.id, id);
     await api("/api/config", { method: "PUT", body: JSON.stringify(next) });
@@ -1295,6 +1921,7 @@ $("#h-win-add").onclick = () => {
   const name = $("#h-win-name").value.trim();
   const leds = toGlobals($("#h-ctrl").value, $("#h-out").value, selectedLocals("h-leds"));
   const farbe = parseHex($("#h-win-farbe").value) || DEFAULT_COLOR;
+  const anteil = $("#h-anteil") ? $("#h-anteil").value || "rgb" : "rgb";
   if (!name) {
     notify("Bitte einen Fensternamen vergeben.", false);
     return;
@@ -1308,7 +1935,7 @@ $("#h-win-add").onclick = () => {
   if (idx < 0 && editingWindow) idx = lines.findIndex((win) => win.name === editingWindow);
   const existed = idx >= 0;
   runAction(existed ? "Fenster aktualisiert" : "Fenster übernommen", () => {
-    const entry = { name, leds: leds.join(","), farbe };
+    const entry = { name, leds: leds.join(","), farbe, anteil };
     if (idx >= 0) lines[idx] = entry;
     else lines.push(entry);
     $("#h-fenster").value = fensterLinesToText(lines);
@@ -1323,11 +1950,12 @@ $("#h-add").onclick = () => {
     if (!id) throw new Error("Bitte eine ID vergeben.");
     const next = await api("/api/config");
     const fenster = {};
-    for (const line of $("#h-fenster").value.split("\n")) {
-      const t = line.trim();
-      if (!t) continue;
-      const [name, leds, farbe] = t.split(":");
-      fenster[name] = { leds: parseLeds(leds || ""), farbe: (farbe || DEFAULT_COLOR).trim() };
+    for (const line of parseFensterLines($("#h-fenster").value)) {
+      fenster[line.name] = {
+        leds: parseLeds(line.leds || ""),
+        farbe: (line.farbe || DEFAULT_COLOR).trim(),
+        anteil: line.anteil || "rgb",
+      };
     }
     if (!Object.keys(fenster).length) throw new Error("Bitte mindestens ein Fenster übernehmen.");
     next.haeuser = next.haeuser || {};
@@ -1384,14 +2012,40 @@ $("#s-add").onclick = () => {
 };
 
 $("#sig-asp-add").onclick = () => runAction("Begriff übernommen", () => {
-  const asp = $("#sig-asp-n").value;
-  const name = $("#sig-asp-name").value.trim() || String(asp);
-  const farbe = parseHex($("#sig-farbe").value) || "FF0000";
+  let asp = Number($("#sig-asp-n").value);
+  if (!Number.isFinite(asp) || asp < 0) asp = 0;
+  const nameField = $("#sig-asp-name");
+  const typedName = (nameField.value || "").trim() || (nameField.placeholder || "").trim();
+  const anteil = $("#sig-anteil") ? $("#sig-anteil").value || "rgb" : "rgb";
+  syncFarbeToAnteil("sig-farbe", anteil);
+  const farbe = parseHex($("#sig-farbe").value) || ANTEIL_PRIMARY[anteil] || "FF0000";
   const leds = toGlobals($("#sig-ctrl").value, $("#sig-out").value, selectedLocals("sig-leds"));
   if (!leds.length) throw new Error("Bitte mindestens eine LED wählen.");
-  const line = `${asp}:${name}:${leds.map((i) => `${i}=${farbe}`).join(",")}`;
-  const ta = $("#sig-asp");
-  ta.value = ta.value.trim() ? `${ta.value.trim()}\n${line}` : line;
+  const begriffe = parseSignalBegriffe($("#sig-asp").value);
+  const byName = typedName
+    ? Object.entries(begriffe).find(([, begriff]) => (begriff.name || "") === typedName)
+    : null;
+  if (byName) {
+    asp = Number(byName[0]);
+  } else if (begriffe[asp] && typedName && begriffe[asp].name && begriffe[asp].name !== typedName) {
+    asp = nextAspectNumber(begriffe);
+  }
+  const wasNew = !begriffe[asp];
+  if (!begriffe[asp]) begriffe[asp] = { name: typedName || String(asp), leds: {}, anteile: {} };
+  else if (typedName) begriffe[asp].name = typedName;
+  for (const idx of leds) {
+    begriffe[asp].leds[idx] = farbe;
+    if (anteil && anteil !== "rgb") begriffe[asp].anteile[idx] = anteil;
+    else delete begriffe[asp].anteile[idx];
+  }
+  $("#sig-asp").value = begriffeToText(begriffe);
+  if (wasNew) {
+    $("#sig-asp-n").value = String(nextAspectNumber(begriffe));
+    nameField.value = "";
+    nameField.placeholder = "Fahrt";
+  } else {
+    $("#sig-asp-n").value = String(asp);
+  }
 });
 
 $("#sig-add").onclick = () => {
@@ -1400,18 +2054,7 @@ $("#sig-add").onclick = () => {
     const id = $("#sig-id").value.trim();
     if (!id) throw new Error("Bitte eine ID vergeben.");
     const next = await api("/api/config");
-    const begriffe = {};
-    for (const line of $("#sig-asp").value.split("\n")) {
-      const t = line.trim();
-      if (!t) continue;
-      const [asp, name, rest] = t.split(":");
-      const leds = {};
-      for (const part of (rest || "").split(",")) {
-        const [idx, col] = part.split("=");
-        if (idx) leds[Number(idx)] = (col || "FF0000").trim();
-      }
-      begriffe[Number(asp)] = { name: name || String(asp), leds };
-    }
+    const begriffe = compactSignalBegriffe(parseSignalBegriffe($("#sig-asp").value));
     if (!Object.keys(begriffe).length) throw new Error("Bitte mindestens einen Begriff übernehmen.");
     next.signale = next.signale || {};
     replaceKey(next.signale, updating ? editing.id : null, id, { controller: $("#sig-ctrl").value, begriffe });
@@ -1445,10 +2088,114 @@ $("#sp-add").onclick = () => {
       geschwindigkeit: sx,
       intensitaet: ix,
       farbe: parseHex($("#sp-farbe").value) || DEFAULT_COLOR,
+      anteil: $("#sp-anteil") ? $("#sp-anteil").value || "rgb" : "rgb",
     });
     if (updating) retargetRefs(next, editing.id, id);
     await api("/api/config", { method: "PUT", body: JSON.stringify(next) });
     await afterSave("spezial");
+  });
+};
+
+$("#v-kanaele").addEventListener("input", () => fillVehicleModeChannels());
+
+["v-art", "v-schritte"].forEach((id) => {
+  const el = document.getElementById(id);
+  if (el) {
+    el.addEventListener("change", updateRundumHint);
+    el.addEventListener("input", updateRundumHint);
+  }
+});
+
+$("#v-ch-add").onclick = () => {
+  const name = $("#v-ch-name").value.trim();
+  const leds = toGlobals($("#v-ctrl").value, $("#v-out").value, selectedLocals("v-leds"));
+  const farbe = parseHex($("#v-farbe").value) || DEFAULT_COLOR;
+  const anteil = $("#v-anteil").value || "rgb";
+  const art = $("#v-art").value || "dauer";
+  const schritte = art === "rundum" ? ($("#v-schritte") && $("#v-schritte").value) || "auto" : "auto";
+  if (!name) {
+    notify("Bitte einen Kanalnamen vergeben.", false);
+    return;
+  }
+  if (!leds.length) {
+    notify("Bitte mindestens eine LED wählen.", false);
+    return;
+  }
+  const lines = parseKanaelLines($("#v-kanaele").value);
+  const idx = lines.findIndex((ch) => ch.name === name);
+  const existed = idx >= 0;
+  runAction(existed ? "Kanal aktualisiert" : "Kanal übernommen", () => {
+    const entry = { name, leds: leds.join(","), anteil, farbe, art, schritte };
+    if (idx >= 0) lines[idx] = entry;
+    else lines.push(entry);
+    $("#v-kanaele").value = kanaelLinesToText(lines);
+    fillVehicleModeChannels();
+  });
+};
+
+$("#v-mod-add").onclick = () => {
+  const n = $("#v-mod-n").value;
+  const name = $("#v-mod-name").value.trim() || String(n);
+  const kanaele = selectedMembers("v-mod-kan");
+  const lines = parseModiLines($("#v-modi").value);
+  const idx = lines.findIndex((m) => String(m.n) === String(n));
+  runAction(idx >= 0 ? "Modus aktualisiert" : "Modus übernommen", () => {
+    const entry = { n: String(n), name, kanaele };
+    if (idx >= 0) lines[idx] = entry;
+    else lines.push(entry);
+    lines.sort((a, b) => Number(a.n) - Number(b.n));
+    $("#v-modi").value = modiLinesToText(lines);
+  });
+};
+
+$("#v-mod-default").onclick = () => {
+  const channels = parseKanaelLines($("#v-kanaele").value);
+  if (!channels.length) {
+    notify("Bitte zuerst Kanäle übernehmen.", false);
+    return;
+  }
+  $("#v-modi").value = modiLinesToText(defaultVehicleModi(channels));
+  notify("Standard-Modi erzeugt", true);
+};
+
+$("#v-add").onclick = () => {
+  const updating = editing.kind === "fahrzeug" && editing.id;
+  runAction(updating ? "Fahrzeug gespeichert" : "Fahrzeug angelegt", async () => {
+    const id = $("#v-id").value.trim();
+    if (!id) throw new Error("Bitte eine ID vergeben.");
+    const kanaele = {};
+    for (const line of parseKanaelLines($("#v-kanaele").value)) {
+      kanaele[line.name] = {
+        leds: parseLeds(line.leds),
+        anteil: line.anteil || "rgb",
+        farbe: parseHex(line.farbe) || DEFAULT_COLOR,
+        art: line.art || "dauer",
+        ...(line.schritte && line.schritte !== "auto" ? { schritte: line.schritte } : {}),
+      };
+    }
+    if (!Object.keys(kanaele).length) throw new Error("Bitte mindestens einen Kanal übernehmen.");
+    let modiLines = parseModiLines($("#v-modi").value);
+    if (!modiLines.length) modiLines = defaultVehicleModi(parseKanaelLines($("#v-kanaele").value));
+    const modi = {};
+    for (const line of modiLines) {
+      modi[Number(line.n)] = { name: line.name, kanaele: line.kanaele };
+    }
+    const blink = durationSeconds($("#v-blink").value, NaN);
+    const rundum = durationSeconds($("#v-rundum").value, NaN);
+    if (!Number.isFinite(blink) || blink <= 0) throw new Error("Blink-Periode muss größer als 0 sein.");
+    if (!Number.isFinite(rundum) || rundum <= 0) throw new Error("Rundum-Schritt muss größer als 0 sein.");
+    const next = await api("/api/config");
+    next.fahrzeuge = next.fahrzeuge || {};
+    replaceKey(next.fahrzeuge, updating ? editing.id : null, id, {
+      controller: $("#v-ctrl").value,
+      kanaele,
+      modi,
+      blink_periode: durationToken(blink),
+      rundum_schritt: durationToken(rundum),
+    });
+    if (updating) retargetRefs(next, editing.id, id);
+    await api("/api/config", { method: "PUT", body: JSON.stringify(next) });
+    await afterSave("fahrzeug");
   });
 };
 
