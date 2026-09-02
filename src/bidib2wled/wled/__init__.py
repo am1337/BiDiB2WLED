@@ -86,7 +86,6 @@ class LedOutput:
     pin: int | None = None
 
     def to_dict(self) -> dict:
-        label = f"Ausgang {self.index + 1}"
         extras = []
         if self.pin is not None:
             extras.append(f"GPIO {self.pin}")
@@ -97,7 +96,7 @@ class LedOutput:
             "start": self.start,
             "len": self.length,
             "pin": self.pin,
-            "label": f"{label} ({', '.join(extras)})",
+            "label": f"Output {self.index + 1} ({', '.join(extras)})",
         }
 
 
@@ -179,14 +178,14 @@ def warnings_from_cfg(cfg: dict) -> list[str]:
     recv = sync.get("recv") if isinstance(sync.get("recv"), dict) else {}
     send = sync.get("send") if isinstance(sync.get("send"), dict) else {}
     if _truthy(recv.get("en")):
-        warnings.append("UDP-Sync-Empfang ist aktiv. Andere WLED-Geräte können die LEDs überschreiben.")
+        warnings.append("warn.udp_recv")
     if _truthy(send.get("en")):
-        warnings.append("UDP-Sync-Senden ist aktiv. Dieser Controller steuert andere Geräte mit.")
+        warnings.append("warn.udp_send")
     live = iface.get("live") if isinstance(iface.get("live"), dict) else {}
     dmx = live.get("dmx") if isinstance(live.get("dmx"), dict) else {}
     mode = dmx.get("mode")
     if mode not in (None, 0, "0", False):
-        warnings.append("E1.31/DMX-Empfang ist aktiv. Externe Quellen können die LEDs überschreiben.")
+        warnings.append("warn.dmx")
     return warnings
 
 
@@ -279,7 +278,7 @@ class WledDevice:
                 response.raise_for_status()
                 cfg = await response.json()
         except Exception as exc:
-            log.info("WLED %s: Ausgänge nicht lesbar (%s), ein Ausgang", self.info.ip, exc)
+            log.info("WLED %s: outputs not readable (%s), using one output", self.info.ip, exc)
             self._fallback_outputs()
             return
         self.info.outputs = outputs_from_cfg(cfg, self.info.led_count)
@@ -315,10 +314,10 @@ class WledDevice:
         if not self.info.outputs:
             self._fallback_outputs()
         if output < 0 or output >= len(self.info.outputs):
-            raise ValueError(f"Ausgang {output} existiert nicht")
+            raise ValueError(f"Output {output} does not exist")
         bus = self.info.outputs[output]
         if local_index < 0 or local_index >= bus.length:
-            raise ValueError(f"LED {local_index} liegt nicht auf Ausgang {output + 1}")
+            raise ValueError(f"LED {local_index} is not on output {output + 1}")
         return bus.start + local_index
 
     async def apply_pixels(self, updates: dict[int, tuple[int, int, int]]) -> None:

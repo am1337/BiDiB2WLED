@@ -39,7 +39,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     config_path = args.config or default_config_path()
     if not config_path.exists():
-        logging.getLogger(__name__).info("Leere Konfiguration wird angelegt: %s", config_path)
+        logging.getLogger(__name__).info("Creating empty configuration: %s", config_path)
         from bidib2wled.config import default_config
 
         save_config(config_path, default_config())
@@ -64,14 +64,14 @@ def main(argv: list[str] | None = None) -> None:
 
     if host in ("0.0.0.0", "::"):
         logging.getLogger(__name__).info(
-            "Weboberfläche lauscht auf allen Netzwerkschnittstellen (%s:%s). "
-            "Im Browser z. B. http://127.0.0.1:%s – von anderen Rechnern über die LAN-IP dieses Hosts.",
+            "Web UI listening on all interfaces (%s:%s). "
+            "In a browser use e.g. http://127.0.0.1:%s – from other machines use this host's LAN IP.",
             host,
             port,
             port,
         )
     else:
-        logging.getLogger(__name__).info("Weboberfläche: http://%s:%s", host, port)
+        logging.getLogger(__name__).info("Web UI: http://%s:%s", host, port)
     uvicorn.run(app, host=host, port=port, log_level="info")
 
 
