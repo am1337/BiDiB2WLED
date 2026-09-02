@@ -2,11 +2,13 @@ from bidib2wled.pixels import (
     clear_components,
     delete_index_range,
     delete_led_range,
+    delete_span,
     expand_anteil,
     set_components,
     shift_index,
     shift_index_map,
     shift_led_list,
+    shift_span,
 )
 
 
@@ -47,6 +49,16 @@ def test_shift_helpers():
     mapping, n = shift_index_map({4: "a", 5: "b"}, 5, 3)
     assert mapping == {4: "a", 8: "b"}
     assert n == 1
+
+
+def test_span_insert_and_delete():
+    assert shift_span(2, 6, 4, 2) == (2, 8)
+    assert shift_span(5, 7, 2, 1) == (6, 8)
+    assert shift_span(0, 0, 1, 3) == (0, 0)
+    assert delete_span(0, 9, 2, 3) == (0, 6)
+    assert delete_span(3, 5, 3, 3) is None
+    assert delete_span(10, 12, 0, 2) == (8, 10)
+    assert delete_span(2, 6, 0, 2) == (0, 4)
 
 
 def test_delete_led_range():

@@ -137,3 +137,20 @@ def delete_index_range(mapping: dict[int, object], first: int, count: int) -> tu
             out[idx - count] = value
             shifted += 1
     return out, shifted, dropped
+
+
+def shift_span(start: int, end: int, first_shifted: int, count: int) -> tuple[int, int]:
+    """Verschiebt ein inklusives Intervall wie die LED-Adressen."""
+    lo, hi = (start, end) if start <= end else (end, start)
+    mapped = [i + count if i >= first_shifted else i for i in range(lo, hi + 1)]
+    return min(mapped), max(mapped)
+
+
+def delete_span(start: int, end: int, first: int, count: int) -> tuple[int, int] | None:
+    """Entfernt Indizes aus einem inklusiven Intervall. None = Intervall leer."""
+    lo, hi = (start, end) if start <= end else (end, start)
+    last = first + count
+    mapped = [i if i < first else i - count for i in range(lo, hi + 1) if i < first or i >= last]
+    if not mapped:
+        return None
+    return min(mapped), max(mapped)

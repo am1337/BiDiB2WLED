@@ -109,6 +109,20 @@
           <button type="button" id="del-go">Entfernen und Adressen anpassen</button>
         </div>
       </article>
+      <article>
+        <h2>5. LED-Namen</h2>
+        <p>
+          Namen für einzelne LEDs, RGB-Anteile oder Bereiche. In den LED-Listen erscheint der Name hinter der Nummer.
+          Beim Einfügen oder Entfernen im Bus wandern die Namen mit den LEDs mit.
+          Die Nummern gelten für den gewählten Ausgang (LED 1 ist die erste LED dort).
+        </p>
+        <div class="row wrap">
+          <label>Controller <select id="nam-ctrl"></select></label>
+          <label>Ausgang <select id="nam-out"></select></label>
+        </div>
+        <textarea id="nam-text" rows="6" placeholder="LED1 = Straßenlaterne&#10;3-7 = Haus3&#10;12r = Halt&#10;12g = Fahrt"></textarea>
+        <button type="button" id="nam-go">Namen speichern</button>
+      </article>
     </section>
 
     <section id="tab-objects" class="hidden">
@@ -315,7 +329,7 @@
               <option value="doppelblitz">Doppelblitz</option>
             </select>
           </label>
-          <label title="Nur Rundumlicht: ganze Pixel oder die RGB-Pins eines WS2811 nacheinander">Rundum-Schritte
+          <label id="v-schritte-wrap" class="hidden" title="Nur Rundumlicht: ganze Pixel oder die RGB-Pins eines WS2811 nacheinander">Rundum-Schritte
             <select id="v-schritte">
               <option value="auto">automatisch</option>
               <option value="leds">LEDs nacheinander</option>
@@ -374,6 +388,6 @@
       <label>B <input id="cp-b" type="number" min="0" max="255"></label>
     </div>
   </div>
-  <script src="/static/app.js?v=30"></script>
+  <script src="/static/app.js?v=31"></script>
 </body>
 </html>

@@ -95,6 +95,51 @@ def parse_schritte(value: Any) -> str:
     return mapped
 
 
+_LED_NAME_SPEC = re.compile(
+    r"^(?:led\s*)?(?P<von>\d+)(?:\s*[-–]\s*(?:led\s*)?(?P<bis>\d+))?"
+    r"(?:\s*(?P<farbe>r|g|b|rot|gruen|grün|green|blau|blue))?$",
+    re.I,
+)
+
+
+def parse_led_name_line(line: str) -> tuple[int, int, str, str] | None:
+    """Liest 'LED1 = Laterne', '3-7 Haus3', '12r=Halt'. Nummern sind 1-basiert."""
+    raw = (line or "").strip()
+    if not raw or raw.startswith("#"):
+        return None
+    if "=" in raw:
+        left, name = raw.split("=", 1)
+    elif ":" in raw:
+        left, name = raw.split(":", 1)
+    else:
+        parts = raw.split(None, 1)
+        if len(parts) != 2:
+            return None
+        left, name = parts
+    name = name.strip()
+    left = left.strip()
+    if not name or not left:
+        return None
+    match = _LED_NAME_SPEC.match(left)
+    if not match:
+        return None
+    von = int(match.group("von"))
+    bis = int(match.group("bis") or von)
+    if von < 1 or bis < 1:
+        return None
+    if bis < von:
+        von, bis = bis, von
+    farbe = match.group("farbe")
+    anteil = parse_anteil(farbe) if farbe else "rgb"
+    return von, bis, anteil, name
+
+
+def format_led_name_line(von_1: int, bis_1: int, anteil: str, name: str) -> str:
+    span = str(von_1) if von_1 == bis_1 else f"{von_1}-{bis_1}"
+    color = "" if (anteil or "rgb") == "rgb" else anteil
+    return f"{span}{color} = {name}"
+
+
 class LampConfig(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     controller: str
@@ -337,6 +382,42 @@ class SpecialConfig(BaseModel):
         return parse_anteil(value)
 
 
+class LedNameConfig(BaseModel):
+    """Anzeigename für eine LED, einen RGB-Anteil oder einen Bereich (0-basierte Indizes)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+    name: str = Field(min_length=1)
+    von: int = Field(ge=0)
+    bis: int = Field(ge=0)
+    anteil: Literal["r", "g", "b", "rgb"] = "rgb"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _led_alias(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        if "led" in data and "von" not in data:
+            data = dict(data)
+            led = data.pop("led")
+            data["von"] = led
+            data.setdefault("bis", led)
+        return data
+
+    @field_validator("anteil", mode="before")
+    @classmethod
+    def _anteil(cls, value: Any) -> str:
+        return parse_anteil(value)
+
+    @model_validator(mode="after")
+    def _order(self) -> LedNameConfig:
+        if self.bis < self.von:
+            self.von, self.bis = self.bis, self.von
+        return self
+
+    def covers(self, index: int) -> bool:
+        return self.von <= int(index) <= self.bis
+
+
 class ControllerConfig(BaseModel):
     name: str
     mdns: str | None = None
@@ -344,6 +425,7 @@ class ControllerConfig(BaseModel):
     ip: str | None = None
     leds: int | None = None
     port: int = 80
+    namen: list[LedNameConfig] = Field(default_factory=list)
 
     @field_validator("mac")
     @classmethod
@@ -468,6 +550,40 @@ class AppConfig(BaseModel):
             if item.name == name:
                 return item
         return None
+
+    def led_label(self, controller: str, index: int, anteil: str = "rgb") -> str:
+        """Anzeigename für eine LED in den Listen, sonst leer."""
+        ctrl = self.controller_by_name(controller)
+        if ctrl is None:
+            return ""
+        covering = [item for item in ctrl.namen if item.covers(index)]
+        if not covering:
+            return ""
+        want = parse_anteil(anteil)
+
+        def smallest(items: list[LedNameConfig]) -> LedNameConfig:
+            return min(items, key=lambda item: (item.bis - item.von, item.name))
+
+        if want in ("r", "g", "b"):
+            exact = [item for item in covering if item.anteil == want]
+            if exact:
+                return smallest(exact).name
+        channels = [item for item in covering if item.anteil in ("r", "g", "b")]
+        rgb = [item for item in covering if item.anteil == "rgb"]
+        if want == "rgb" and channels:
+            parts: list[str] = []
+            for component in ("r", "g", "b"):
+                hits = [item for item in channels if item.anteil == component]
+                if hits:
+                    parts.append(smallest(hits).name)
+            if parts:
+                extra = smallest(rgb).name if rgb else ""
+                return f"{extra} ({' / '.join(parts)})" if extra else " / ".join(parts)
+        if rgb:
+            return smallest(rgb).name
+        if channels:
+            return smallest(channels).name
+        return ""
 
     def switchable_object_ids(self) -> list[str]:
         """Objekte mit eigener BiDiB-Accessory-Nummer (Fenster nur nach Handzuweisung)."""
@@ -633,7 +749,7 @@ class AppConfig(BaseModel):
 
     def shift_controller_leds(self, controller: str, first_shifted: int, count: int, wled_count: int) -> int:
         """Schiebt alle LED-Adressen ab `first_shifted` um `count`. Prüft gegen die WLED-Länge."""
-        from bidib2wled.pixels import shift_index_map, shift_led_list
+        from bidib2wled.pixels import shift_index_map, shift_led_list, shift_span
 
         if count < 1:
             raise ValueError("Anzahl muss mindestens 1 sein")
@@ -683,11 +799,18 @@ class AppConfig(BaseModel):
             for channel in vehicle.kanaele.values():
                 channel.leds, n = shift_led_list(channel.leds, first_shifted, count)
                 changed += n
+        ctrl = self.controller_by_name(controller)
+        if ctrl and ctrl.namen:
+            moved: list[LedNameConfig] = []
+            for label in ctrl.namen:
+                von, bis = shift_span(label.von, label.bis, first_shifted, count)
+                moved.append(label.model_copy(update={"von": von, "bis": bis}))
+            ctrl.namen = moved
         return changed
 
     def delete_controller_leds(self, controller: str, first_removed: int, count: int) -> dict[str, int | list[str]]:
         """Entfernt `count` LEDs ab `first_removed` und zählt Folgeadressen herunter. Keine WLED-Sperre."""
-        from bidib2wled.pixels import delete_index_range, delete_led_range
+        from bidib2wled.pixels import delete_index_range, delete_led_range, delete_span
 
         if count < 1:
             raise ValueError("Anzahl muss mindestens 1 sein")
@@ -769,6 +892,15 @@ class AppConfig(BaseModel):
                 channel.leds, n, d = delete_led_range(channel.leds, first_removed, count)
                 shifted += n
                 dropped += d
+        ctrl = self.controller_by_name(controller)
+        if ctrl and ctrl.namen:
+            kept: list[LedNameConfig] = []
+            for label in ctrl.namen:
+                span = delete_span(label.von, label.bis, first_removed, count)
+                if span is None:
+                    continue
+                kept.append(label.model_copy(update={"von": span[0], "bis": span[1]}))
+            ctrl.namen = kept
         return {"shifted": shifted, "dropped": dropped}
 
     def object_usage(self) -> dict[str, list[str]]:
@@ -847,6 +979,9 @@ def _omit_empty_anteile(payload: Any) -> Any:
         for channel in (vehicle.get("kanaele") or {}).values():
             if isinstance(channel, dict) and channel.get("schritte") in (None, "auto"):
                 channel.pop("schritte", None)
+    for ctrl in payload.get("controller") or []:
+        if isinstance(ctrl, dict) and not ctrl.get("namen"):
+            ctrl.pop("namen", None)
     return payload
 
 

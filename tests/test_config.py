@@ -7,10 +7,12 @@ from bidib2wled.config import (
     AppConfig,
     ControllerConfig,
     VehicleConfig,
+    format_led_name_line,
     load_config,
     normalize_mac,
     parse_delay_range,
     parse_duration,
+    parse_led_name_line,
     save_config,
 )
 
@@ -561,4 +563,88 @@ def test_signal_same_led_two_color_channels_roundtrip():
     again = AppConfig.model_validate(dumped)
     assert again.signale["s1"].begriffe[0].anteil_of(5) == "r"
     assert again.signale["s1"].begriffe[1].anteil_of(5) == "g"
+
+
+def test_parse_led_name_lines():
+    assert parse_led_name_line("LED1 = Straßenlaterne") == (1, 1, "rgb", "Straßenlaterne")
+    assert parse_led_name_line("3-7 Haus3") == (3, 7, "rgb", "Haus3")
+    assert parse_led_name_line("LED3-7=Haus3") == (3, 7, "rgb", "Haus3")
+    assert parse_led_name_line("12r=Halt") == (12, 12, "r", "Halt")
+    assert parse_led_name_line("12 rot = Halt") == (12, 12, "r", "Halt")
+    assert parse_led_name_line("12g:Fahrt") == (12, 12, "g", "Fahrt")
+    assert parse_led_name_line("# Kommentar") is None
+    assert parse_led_name_line("") is None
+    assert format_led_name_line(1, 1, "rgb", "Straßenlaterne") == "1 = Straßenlaterne"
+    assert format_led_name_line(3, 7, "rgb", "Haus3") == "3-7 = Haus3"
+    assert format_led_name_line(12, 12, "r", "Halt") == "12r = Halt"
+
+
+def test_led_names_yaml_and_labels(tmp_path: Path):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        """
+controller:
+  - name: dorf
+    ip: 127.0.0.1
+    leds: 20
+    namen:
+      - { led: 0, name: Straßenlaterne }
+      - { von: 2, bis: 6, name: Haus3 }
+      - { led: 11, anteil: r, name: Halt }
+      - { led: 11, anteil: g, name: Fahrt }
+lampen:
+  laterne: { controller: dorf, leds: [0] }
+""",
+        encoding="utf-8",
+    )
+    cfg = load_config(path)
+    assert cfg.led_label("dorf", 0) == "Straßenlaterne"
+    assert cfg.led_label("dorf", 4) == "Haus3"
+    assert cfg.led_label("dorf", 11, "r") == "Halt"
+    assert cfg.led_label("dorf", 11, "g") == "Fahrt"
+    assert cfg.led_label("dorf", 11, "rgb") == "Halt / Fahrt"
+    save_config(path, cfg)
+    text = path.read_text(encoding="utf-8")
+    assert "Straßenlaterne" in text
+    again = load_config(path)
+    assert again.led_label("dorf", 0) == "Straßenlaterne"
+
+
+def test_led_names_move_with_insert_and_delete():
+    cfg = AppConfig.model_validate(
+        {
+            "controller": [
+                {
+                    "name": "c",
+                    "ip": "127.0.0.1",
+                    "leds": 20,
+                    "namen": [
+                        {"led": 0, "name": "Laterne"},
+                        {"von": 2, "bis": 6, "name": "Haus3"},
+                        {"led": 11, "anteil": "r", "name": "Halt"},
+                    ],
+                }
+            ],
+            "lampen": {"l": {"controller": "c", "leds": [0]}},
+        }
+    )
+    cfg.shift_controller_leds("c", first_shifted=1, count=2, wled_count=22)
+    names = {(item.von, item.bis, item.anteil, item.name) for item in cfg.controller[0].namen}
+    assert (0, 0, "rgb", "Laterne") in names
+    assert (4, 8, "rgb", "Haus3") in names
+    assert (13, 13, "r", "Halt") in names
+    cfg.shift_controller_leds("c", first_shifted=6, count=1, wled_count=23)
+    haus = next(item for item in cfg.controller[0].namen if item.name == "Haus3")
+    assert (haus.von, haus.bis) == (4, 9)
+    cfg.delete_controller_leds("c", first_removed=4, count=2)
+    names = {(item.von, item.bis, item.anteil, item.name) for item in cfg.controller[0].namen}
+    assert (0, 0, "rgb", "Laterne") in names
+    assert (4, 7, "rgb", "Haus3") in names
+    assert (12, 12, "r", "Halt") in names
+    cfg.delete_controller_leds("c", first_removed=12, count=1)
+    names = {(item.von, item.bis, item.name) for item in cfg.controller[0].namen}
+    assert (0, 0, "Laterne") in names
+    assert (4, 7, "Haus3") in names
+    assert all(item.name != "Halt" for item in cfg.controller[0].namen)
+
 

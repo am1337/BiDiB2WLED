@@ -18,7 +18,7 @@ Läuft unter **Linux**, **Windows** und **macOS** (Python 3.11 oder neuer).
 | **Spezial** | eingebauter WLED-Effekt (Feuer, Kerze, …) auf den gewählten LEDs | aus / an |
 | **Fahrzeug** | Standmodell mit Lichtkanälen (Scheinwerfer, Blinker, Rundumlicht, …) | Modus (aus, Licht, Warnblinker, Einsatz, …) |
 
-Zusätzlich: WLED-Geräte im Netz finden, LEDs am Modell identifizieren (blinken lassen), LEDs in den Bus nachtragen (Adressen der folgenden Objekte werden verschoben), alles in der Weboberfläche anlegen und testen, dauerhaft als Dienst betreiben.
+Zusätzlich: WLED-Geräte im Netz finden, LEDs am Modell identifizieren (blinken lassen), LEDs benennen, LEDs in den Bus nachtragen (Adressen und Namen der folgenden LEDs werden verschoben), alles in der Weboberfläche anlegen und testen, dauerhaft als Dienst betreiben.
 
 ![Statusseite](status.png)
 
@@ -143,8 +143,9 @@ Auf jedem Controller (WLED-Weboberfläche oder App), **einmalig**:
 3. Gefundene WLED-Geräte benennen und **übernehmen** – oder IP von Hand eintragen.
 4. Unter **Status** die IP eines Controllers anklicken, um dessen WLED-Seite zu öffnen. Unter **Einrichtung** Controller, Ausgang und LED wählen und **identifizieren** („welche Laterne blinkt?“).
 5. Hast du LEDs in die Kette gelötet oder entfernt: unter **Einrichtung → LEDs im Bus nachtragen**. Zum Einfügen zuerst in WLED die LED-Anzahl erhöhen, dann die Stelle angeben (z. B. nach LED 5) – Folgeadressen werden hochgezählt, mehr als in WLED geht nicht. Zum Entfernen die erste fehlende LED und die Anzahl angeben (z. B. ab LED 6 drei Stück) – Folgeadressen werden heruntergezählt. Wenn WLED schon weniger LEDs hat, blockiert das nicht; die Differenz wird angezeigt, damit du an mehreren Stellen nacheinander nachtragen kannst.
-6. Unter **Objekte** Lampen, Häuser, Gruppen, Sequenzen, Signale, Spezial-Effekte und Fahrzeuge anlegen. Jedes Objekt kann einen **RGB-Anteil** (alle / nur R / G / B) nutzen, damit drei LEDs an einem Pixel unabhängig schalten. Speichern gibt eine Rückmeldung; Farben lassen sich über Farbrad, HTML-Wert oder RGB wählen. Bereits vergebene LEDs und Kanäle sind in den Auswahllisten markiert.
-7. Unter **Status → Verfügbare Objekte** testen (Schalter bzw. Signalbegriff), bei Bedarf **Ändern** oder **Löschen**.
+6. Unter **Einrichtung → LED-Namen** kannst du einzelne LEDs, RGB-Anteile und Bereiche benennen, z. B. `LED1 = Straßenlaterne`, `3-7 = Haus3`, `12r = Halt`. Die Namen stehen in den LED-Listen hinter der Nummer. Beim Nachtragen im Bus wandern sie mit den LEDs mit. Die Nummern gelten für den gewählten Ausgang (LED 1 ist dort die erste).
+7. Unter **Objekte** Lampen, Häuser, Gruppen, Sequenzen, Signale, Spezial-Effekte und Fahrzeuge anlegen. Jedes Objekt kann einen **RGB-Anteil** (alle / nur R / G / B) nutzen, damit drei LEDs an einem Pixel unabhängig schalten. Speichern gibt eine Rückmeldung; Farben lassen sich über Farbrad, HTML-Wert oder RGB wählen. Bereits vergebene LEDs und Kanäle sind in den Auswahllisten markiert. Bei Fahrzeugen erscheint **Rundum-Schritte** nur, wenn die Kanal-Art **Rundumlicht** ist.
+8. Unter **Status → Verfügbare Objekte** testen (Schalter bzw. Signalbegriff), bei Bedarf **Ändern** oder **Löschen**.
 
 Die Datei `config.yaml` ist das einzige Speicherformat. Die Oberfläche schreibt sie. Von Hand editieren geht ebenfalls; danach in der Oberfläche **Von Disk neu laden** oder einfach speichern – der Dienst prüft die Datei alle 2 Sekunden.
 
@@ -330,6 +331,11 @@ controller:
   - name: dorf
     ip: 192.168.1.51
     leds: 80
+    namen:
+      - { led: 0, name: Straßenlaterne }
+      - { von: 2, bis: 6, name: Haus3 }
+      - { led: 11, anteil: r, name: Halt }
+      - { led: 11, anteil: g, name: Fahrt }
 
 lampen:
   laterne-01:
@@ -398,7 +404,9 @@ fahrzeuge:
 
 Farben sind `RRGGBB` ohne `#`. LED-Indizes sind global auf dem Controller (Ausgang 1 beginnt bei 0). `anteil` (`r`/`g`/`b`/`rgb`) ist der RGB-Anteil: so werden die drei LEDs eines Pixels unabhängig geschaltet. Spezial-Objekte nutzen die WLED-Effekte des Controllers (`effekt` / `palette` sind die Nummern aus der Weboberfläche); Effekte wirken auf das ganze Pixel.
 
-Fahrzeuge, Rundumlicht: `schritte` steuert, was nacheinander aufleuchtet.
+Unter `controller.namen` liegen Anzeigenamen: `led` (eine LED) oder `von`/`bis` (Bereich, inklusive, 0-basiert), optional `anteil` für eine Farbe derselben LED. Beim Einfügen oder Entfernen im Bus werden die Namen wie die Objekt-Adressen verschoben.
+
+Fahrzeuge, Rundumlicht: `schritte` steuert, was nacheinander aufleuchtet. In der Oberfläche erscheint die Auswahl nur bei Art **Rundumlicht**.
 
 | `schritte` | Bedeutung |
 |---|---|

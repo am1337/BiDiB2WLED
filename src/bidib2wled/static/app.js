@@ -367,6 +367,161 @@ function usedMark(owners, exclude) {
   };
 }
 
+const ANTEIL_ALIASES = {
+  r: "r",
+  rot: "r",
+  red: "r",
+  g: "g",
+  gruen: "g",
+  "grün": "g",
+  green: "g",
+  b: "b",
+  blau: "b",
+  blue: "b",
+  rgb: "rgb",
+  alle: "rgb",
+  all: "rgb",
+};
+
+function parseAnteil(value) {
+  const raw = String(value || "rgb").trim().toLowerCase();
+  return ANTEIL_ALIASES[raw] || "rgb";
+}
+
+function nameVon(item) {
+  if (item == null) return NaN;
+  if (item.von != null && item.von !== "") return Number(item.von);
+  return Number(item.led);
+}
+
+function nameBis(item) {
+  if (item == null) return NaN;
+  if (item.bis != null && item.bis !== "") return Number(item.bis);
+  return nameVon(item);
+}
+
+function controllerNames(name) {
+  const ctrl = (cfg.controller || []).find((item) => item.name === name);
+  return (ctrl && ctrl.namen) || [];
+}
+
+function smallestLedName(items) {
+  return items.slice().sort((a, b) => {
+    const span = (nameBis(a) - nameVon(a)) - (nameBis(b) - nameVon(b));
+    if (span) return span;
+    return String(a.name || "").localeCompare(String(b.name || ""), "de");
+  })[0];
+}
+
+function ledNameFor(ctrlName, index, anteil) {
+  const covering = controllerNames(ctrlName).filter((item) => {
+    const von = nameVon(item);
+    const bis = nameBis(item);
+    return Number.isFinite(von) && Number.isFinite(bis) && von <= index && index <= bis;
+  });
+  if (!covering.length) return "";
+  const want = parseAnteil(anteil);
+  if (want === "r" || want === "g" || want === "b") {
+    const exact = covering.filter((item) => parseAnteil(item.anteil) === want);
+    if (exact.length) return smallestLedName(exact).name;
+  }
+  const channels = covering.filter((item) => {
+    const a = parseAnteil(item.anteil);
+    return a === "r" || a === "g" || a === "b";
+  });
+  const rgb = covering.filter((item) => parseAnteil(item.anteil) === "rgb");
+  if (want === "rgb" && channels.length) {
+    const parts = [];
+    for (const component of ["r", "g", "b"]) {
+      const hits = channels.filter((item) => parseAnteil(item.anteil) === component);
+      if (hits.length) parts.push(smallestLedName(hits).name);
+    }
+    if (parts.length) {
+      const extra = rgb.length ? smallestLedName(rgb).name : "";
+      return extra ? `${extra} (${parts.join(" / ")})` : parts.join(" / ");
+    }
+  }
+  if (rgb.length) return smallestLedName(rgb).name;
+  if (channels.length) return smallestLedName(channels).name;
+  return "";
+}
+
+function parseLedNameLine(line) {
+  const raw = String(line || "").trim();
+  if (!raw || raw.startsWith("#")) return null;
+  let left;
+  let name;
+  const eq = raw.indexOf("=");
+  const colon = raw.indexOf(":");
+  if (eq >= 0 && (colon < 0 || eq < colon)) {
+    left = raw.slice(0, eq);
+    name = raw.slice(eq + 1);
+  } else if (colon >= 0) {
+    left = raw.slice(0, colon);
+    name = raw.slice(colon + 1);
+  } else {
+    const parts = raw.split(/\s+/);
+    if (parts.length < 2) return null;
+    left = parts[0];
+    name = parts.slice(1).join(" ");
+  }
+  name = name.trim();
+  left = left.trim();
+  if (!name || !left) return null;
+  const match = left.match(/^(?:led\s*)?(\d+)(?:\s*[-–]\s*(?:led\s*)?(\d+))?(?:\s*(r|g|b|rot|gruen|grün|green|blau|blue))?$/i);
+  if (!match) return null;
+  let von = Number(match[1]);
+  let bis = Number(match[2] || von);
+  if (!Number.isInteger(von) || !Number.isInteger(bis) || von < 1 || bis < 1) return null;
+  if (bis < von) [von, bis] = [bis, von];
+  return { von, bis, anteil: match[3] ? parseAnteil(match[3]) : "rgb", name };
+}
+
+function formatLedNameLine(von1, bis1, anteil, name) {
+  const span = von1 === bis1 ? String(von1) : `${von1}-${bis1}`;
+  const color = !anteil || anteil === "rgb" ? "" : anteil;
+  return `${span}${color} = ${name}`;
+}
+
+function outputRange(ctrlName, outId) {
+  const outs = outputsOf(ctrlName);
+  const out = outs.find((item) => String(item.id) === String(outId)) || outs[0];
+  if (out) {
+    const len = Number(out.len) || 0;
+    return { start: out.start || 0, end: (out.start || 0) + len, out };
+  }
+  const ctrl = (cfg.controller || []).find((item) => item.name === ctrlName);
+  const n = (ctrl && ctrl.leds) || 0;
+  return { start: 0, end: n, out: null };
+}
+
+function fillLedNameText() {
+  const ta = $("#nam-text");
+  if (!ta) return;
+  if (document.activeElement === ta) return;
+  const ctrlName = $("#nam-ctrl") && $("#nam-ctrl").value;
+  const range = outputRange(ctrlName, $("#nam-out") && $("#nam-out").value);
+  const end = range.end > range.start ? range.end : Number.POSITIVE_INFINITY;
+  const lines = controllerNames(ctrlName)
+    .filter((item) => {
+      const von = nameVon(item);
+      return Number.isFinite(von) && von >= range.start && von < end;
+    })
+    .map((item) => {
+      const von1 = nameVon(item) - range.start + 1;
+      const bis1 = nameBis(item) - range.start + 1;
+      return formatLedNameLine(von1, bis1, parseAnteil(item.anteil), item.name);
+    });
+  ta.value = lines.join("\n");
+}
+
+function fillLedNameEditor() {
+  const ctrlEl = $("#nam-ctrl");
+  if (!ctrlEl) return;
+  fillOutputSelect("nam-out", ctrlEl.value);
+  fillLedNameText();
+}
+
 function fillOutputSelect(outId, ctrlName) {
   const el = document.getElementById(outId);
   const outs = outputsOf(ctrlName);
@@ -409,7 +564,9 @@ function fillLedSelect(ledId, ctrlName, outId, anteilId, insert, remove) {
     const cls = mark.used ? ' class="opt-used"' : "";
     const title = mark.title ? ` title="${esc(mark.title)}"` : "";
     const beyond = i >= wledLen ? " · nur Konfiguration" : "";
-    const label = `LED ${i + 1} (Nr. ${global})${mark.suffix}${beyond}`;
+    const name = ledNameFor(ctrlName, global, anteil);
+    const namePart = name ? ` · ${esc(name)}` : "";
+    const label = `LED ${i + 1} (Nr. ${global})${namePart}${mark.suffix}${beyond}`;
     return `<option value="${i}"${cls}${title}>${label}</option>`;
   });
   if (insert) options.unshift('<option value="-1">am Anfang (vor LED 1)</option>');
@@ -448,7 +605,7 @@ function syncLedDropdowns() {
 
 function fillCtrlSelects() {
   const names = (cfg.controller || []).map((c) => c.name).filter(Boolean);
-  for (const id of ["id-ctrl", "ins-ctrl", "del-ctrl", "l-ctrl", "h-ctrl", "sig-ctrl", "sp-ctrl", "v-ctrl"]) {
+  for (const id of ["id-ctrl", "ins-ctrl", "del-ctrl", "nam-ctrl", "l-ctrl", "h-ctrl", "sig-ctrl", "sp-ctrl", "v-ctrl"]) {
     const el = document.getElementById(id);
     if (!el) continue;
     const current = el.value;
@@ -460,8 +617,10 @@ function fillCtrlSelects() {
     el.value = names.includes(current) ? current : names[0];
   }
   syncLedDropdowns();
+  fillLedNameEditor();
   fillSpecialFx($("#sp-ctrl") && $("#sp-ctrl").value);
   renderLedBusDiff();
+  updateRundumHint();
 }
 
 function fillNamedSelect(el, names, current, emptyLabel) {
@@ -621,6 +780,16 @@ for (const group of LED_GROUPS) {
       if (group.led === "v-leds") updateRundumHint();
     });
   }
+}
+
+if ($("#nam-ctrl")) {
+  $("#nam-ctrl").addEventListener("change", () => {
+    fillOutputSelect("nam-out", $("#nam-ctrl").value);
+    fillLedNameText();
+  });
+}
+if ($("#nam-out")) {
+  $("#nam-out").addEventListener("change", fillLedNameText);
 }
 
 function pairingStatus(b) {
@@ -1046,6 +1215,38 @@ $("#del-go").onclick = () => runAction("LED-Adressen angepasst", async () => {
   return false;
 });
 
+$("#nam-go").onclick = () => runAction("LED-Namen gespeichert", async () => {
+  const controller = $("#nam-ctrl") && $("#nam-ctrl").value;
+  if (!controller) throw new Error("Bitte einen Controller wählen.");
+  const range = outputRange(controller, $("#nam-out") && $("#nam-out").value);
+  const end = range.end > range.start ? range.end : Number.POSITIVE_INFINITY;
+  const parsed = [];
+  for (const raw of String($("#nam-text") && $("#nam-text").value || "").split("\n")) {
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const line = parseLedNameLine(trimmed);
+    if (!line) throw new Error(`Zeile nicht verstanden: ${trimmed}`);
+    parsed.push({
+      von: range.start + line.von - 1,
+      bis: range.start + line.bis - 1,
+      anteil: line.anteil,
+      name: line.name,
+    });
+  }
+  const next = await api("/api/config");
+  const ctrl = (next.controller || []).find((item) => item.name === controller);
+  if (!ctrl) throw new Error("Controller nicht gefunden.");
+  const kept = (ctrl.namen || []).filter((item) => {
+    const von = nameVon(item);
+    return !(Number.isFinite(von) && von >= range.start && von < end);
+  });
+  ctrl.namen = kept.concat(parsed);
+  await api("/api/config", { method: "PUT", body: JSON.stringify(next) });
+  cfg = await api("/api/config");
+  renderStatus();
+  fillCtrlSelects();
+});
+
 function parseLeds(text) {
   return text.split(/[,\s]+/).filter(Boolean).map((x) => Number(x));
 }
@@ -1435,10 +1636,13 @@ function kanaelLinesToText(lines) {
 }
 
 function updateRundumHint() {
+  const wrap = $("#v-schritte-wrap");
+  const art = $("#v-art") && $("#v-art").value;
+  const isRundum = art === "rundum";
+  if (wrap) wrap.classList.toggle("hidden", !isRundum);
   const hint = $("#v-rundum-hint");
   if (!hint) return;
-  const art = $("#v-art") && $("#v-art").value;
-  if (art !== "rundum") {
+  if (!isRundum) {
     hint.textContent = "";
     return;
   }
