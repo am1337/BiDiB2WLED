@@ -22,11 +22,11 @@ def default_config_path() -> Path:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="BiDiB2WLED – BiDiB-Knoten für WLED")
-    parser.add_argument("--config", type=Path, default=None, help="Pfad zur config.yaml")
-    parser.add_argument("--host", default=None, help="Web-Bind-Adresse (Standard aus YAML / 0.0.0.0)")
-    parser.add_argument("--port", type=int, default=None, help="Web-Port (Standard 8080)")
-    parser.add_argument("--simulate", action="store_true", help="Kein echtes WLED, nur Log/Simulation")
+    parser = argparse.ArgumentParser(description="BiDiB2WLED – BiDiB node for WLED")
+    parser.add_argument("--config", type=Path, default=None, help="Path to config.yaml")
+    parser.add_argument("--host", default=None, help="Web bind address (YAML default / 0.0.0.0)")
+    parser.add_argument("--port", type=int, default=None, help="Web port (default 8080)")
+    parser.add_argument("--simulate", action="store_true", help="No real WLED, log/simulation only")
     parser.add_argument("-v", "--verbose", action="store_true")
     return parser
 

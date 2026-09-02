@@ -61,7 +61,7 @@ def create_app(service: "Service") -> FastAPI:
 
     @app.get("/api/config")
     async def get_config() -> dict[str, Any]:
-        return service.config.model_dump(by_alias=True, exclude_none=True)
+        return service.config.model_dump(by_alias=False, exclude_none=True)
 
     @app.put("/api/config")
     async def put_config(payload: dict[str, Any]) -> dict[str, Any]:
@@ -152,6 +152,12 @@ def create_app(service: "Service") -> FastAPI:
     async def pairing_reject() -> dict[str, str]:
         await service.bidib.reject_pairing()
         return {"ok": "rejected"}
+
+    @app.get("/api/languages")
+    async def languages() -> dict[str, Any]:
+        i18n_dir = STATIC_DIR / "i18n"
+        codes = sorted(path.stem for path in i18n_dir.glob("*.json") if path.is_file())
+        return {"languages": codes, "default": "en"}
 
     @app.get("/")
     async def index() -> FileResponse:

@@ -1,22 +1,24 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>BiDiB2WLED</title>
-  <link rel="stylesheet" href="/static/style.css?v=21">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <link rel="stylesheet" href="/static/style.css?v=22">
 </head>
 <body>
   <header>
     <h1>BiDiB2WLED</h1>
-    <p class="sub" id="subtitle">Virtueller BiDiB-Knoten für WLED</p>
+    <p class="sub" id="subtitle" data-i18n="subtitle">Virtual BiDiB node for WLED</p>
   </header>
 
   <nav>
-    <button data-tab="status" class="active">Status</button>
-    <button data-tab="wizard">Einrichtung</button>
-    <button data-tab="objects">Objekte</button>
-    <button data-tab="config">YAML</button>
+    <button data-tab="status" class="active" data-i18n="nav.status">Status</button>
+    <button data-tab="wizard" data-i18n="nav.setup">Setup</button>
+    <button data-tab="objects" data-i18n="nav.objects">Objects</button>
+    <button data-tab="config" data-i18n="nav.yaml">YAML</button>
   </nav>
 
   <main>
@@ -24,371 +26,371 @@
       <div id="pairing-banner" class="banner hidden"></div>
       <div class="grid">
         <article>
-          <h2>BiDiB</h2>
+          <h2 data-i18n="status.bidib">BiDiB</h2>
           <dl id="bidib-dl"></dl>
           <div class="row">
-            <button id="btn-pair">Pairing-Modus</button>
-            <button id="btn-reject" class="secondary">Anfrage ablehnen</button>
+            <button id="btn-pair" data-i18n="btn.pairing">Pairing mode</button>
+            <button id="btn-reject" class="secondary" data-i18n="btn.reject">Reject request</button>
           </div>
         </article>
         <article>
-          <h2>Controller</h2>
+          <h2 data-i18n="status.controllers">Controllers</h2>
           <div id="controllers"></div>
         </article>
       </div>
       <article>
-        <h2>Verfügbare Objekte</h2>
+        <h2 data-i18n="status.objects">Available objects</h2>
         <div id="objects"></div>
       </article>
     </section>
 
     <section id="tab-wizard" class="hidden">
       <article>
-        <h2>1. Adapter</h2>
-        <label>Knotenname <input id="w-name" value="BiDiB2WLED"></label>
-        <label>netBiDiB-Port <input id="w-port" type="number" value="62875"></label>
-        <label>Modus
+        <h2 data-i18n="setup.adapter">1. Adapter</h2>
+        <label><span data-i18n="setup.node_name">Node name</span> <input id="w-name" value="BiDiB2WLED"></label>
+        <label><span data-i18n="setup.port">netBiDiB port</span> <input id="w-port" type="number" value="62875"></label>
+        <label><span data-i18n="setup.mode">Mode</span>
           <select id="w-mode">
-            <option value="server">Server (empfohlen – Host verbindet sich)</option>
-            <option value="client">Client</option>
+            <option value="server" data-i18n="setup.mode.server">Server (recommended – the host connects)</option>
+            <option value="client" data-i18n="setup.mode.client">Client</option>
           </select>
         </label>
-        <button id="w-save-adapter">Adapter speichern</button>
+        <button id="w-save-adapter" data-i18n="setup.save_adapter">Save adapter</button>
       </article>
       <article>
-        <h2>2. WLED-Controller</h2>
-        <p>Gefundene Geräte im Netz. Name vergeben und übernehmen.</p>
+        <h2 data-i18n="setup.controllers">2. WLED controllers</h2>
+        <p data-i18n="setup.controllers_help">Devices found on the network. Assign a name and claim them.</p>
         <div id="unbound"></div>
-        <h3>Von Hand (falls mDNS fehlt)</h3>
+        <h3 data-i18n="setup.manual">Manual (if mDNS is missing)</h3>
         <div class="row wrap">
-          <input id="m-name" placeholder="Name z. B. dorf">
-          <input id="m-ip" placeholder="IP">
-          <input id="m-leds" type="number" placeholder="LEDs" min="1">
-          <button id="m-add">Hinzufügen</button>
+          <input id="m-name" data-i18n-placeholder="ph.name_example" placeholder="Name e.g. village">
+          <input id="m-ip" data-i18n-placeholder="ph.ip" placeholder="IP">
+          <input id="m-leds" type="number" data-i18n-placeholder="ph.leds" placeholder="LEDs" min="1">
+          <button id="m-add" data-i18n="setup.add">Add</button>
         </div>
       </article>
       <article>
-        <h2>3. LED identifizieren</h2>
+        <h2 data-i18n="setup.identify">3. Identify LED</h2>
         <div class="row wrap">
-          <label>Controller <select id="id-ctrl"></select></label>
-          <label>Ausgang <select id="id-out"></select></label>
-          <label>LED <select id="id-led"></select></label>
-          <button id="id-go">Diese LED blinken lassen</button>
+          <label><span data-i18n="setup.controller">Controller</span> <select id="id-ctrl"></select></label>
+          <label><span data-i18n="setup.output">Output</span> <select id="id-out"></select></label>
+          <label><span data-i18n="setup.led">LED</span> <select id="id-led"></select></label>
+          <button id="id-go" data-i18n="setup.blink">Blink this LED</button>
         </div>
       </article>
       <article>
-        <h2>4. LEDs im Bus nachtragen</h2>
-        <p id="led-bus-diff" class="led-bus-diff">WLED-Länge und Objekt-Adressen erscheinen hier, sobald ein Controller gewählt ist.</p>
-        <h3>Einfügen</h3>
-        <p>
-          Wenn du LEDs in die Kette gelötet hast: zuerst in WLED die LED-Anzahl erhöhen,
-          dann hier die Stelle angeben (z. B. nach LED 5, wenn drei neue zwischen alter LED 5 und 6 sitzen).
-          Alle Objekt-Adressen ab der nächsten LED werden hochgezählt.
-          Mehr LEDs als in WLED konfiguriert sind, lassen sich nicht anlegen.
+        <h2 data-i18n="setup.bus">4. Update LEDs on the bus</h2>
+        <p id="led-bus-diff" class="led-bus-diff" data-i18n="setup.bus_diff">WLED length and object addresses appear here once a controller is selected.</p>
+        <h3 data-i18n="setup.insert">Insert</h3>
+        <p data-i18n="setup.insert_help">
+          If you soldered LEDs into the chain: first increase the LED count in WLED,
+          then choose the position here (e.g. after LED 5 if three new ones sit between old LED 5 and 6).
+          All object addresses from the next LED are incremented.
+          You cannot create more LEDs than WLED is configured for.
         </p>
         <div class="row wrap">
-          <label>Controller <select id="ins-ctrl"></select></label>
-          <label>Ausgang <select id="ins-out"></select></label>
-          <label>Nach LED <select id="ins-after"></select></label>
-          <label>Neue LEDs <input id="ins-count" type="number" min="1" step="1" value="1"></label>
-          <button type="button" id="ins-go">Einfügen und Adressen anpassen</button>
+          <label><span data-i18n="setup.controller">Controller</span> <select id="ins-ctrl"></select></label>
+          <label><span data-i18n="setup.output">Output</span> <select id="ins-out"></select></label>
+          <label><span data-i18n="setup.after_led">After LED</span> <select id="ins-after"></select></label>
+          <label><span data-i18n="setup.new_leds">New LEDs</span> <input id="ins-count" type="number" min="1" step="1" value="1"></label>
+          <button type="button" id="ins-go" data-i18n="setup.insert_go">Insert and adjust addresses</button>
         </div>
-        <h3>Entfernen</h3>
-        <p>
-          Wenn du LEDs aus der Kette gelötet hast: hier die erste entfernte LED und die Anzahl angeben
-          (z. B. ab LED 6 drei Stück, wenn alte LED 6–8 fehlen).
-          Alle Objekt-Adressen danach werden heruntergezählt.
-          Eine kleinere LED-Anzahl in WLED blockiert das nicht – die Differenz wird oben angezeigt,
-          damit du an mehreren Stellen nacheinander nachtragen kannst.
+        <h3 data-i18n="setup.remove">Remove</h3>
+        <p data-i18n="setup.remove_help">
+          If you unsoldered LEDs from the chain: choose the first removed LED and the count
+          (e.g. from LED 6, three pieces, if old LEDs 6–8 are gone).
+          All later object addresses are decremented.
+          A smaller LED count in WLED does not block this – the difference is shown above
+          so you can update several places in sequence.
         </p>
         <div class="row wrap">
-          <label>Controller <select id="del-ctrl"></select></label>
-          <label>Ausgang <select id="del-out"></select></label>
-          <label>Ab LED <select id="del-from"></select></label>
-          <label>Anzahl <input id="del-count" type="number" min="1" step="1" value="1"></label>
-          <button type="button" id="del-go">Entfernen und Adressen anpassen</button>
+          <label><span data-i18n="setup.controller">Controller</span> <select id="del-ctrl"></select></label>
+          <label><span data-i18n="setup.output">Output</span> <select id="del-out"></select></label>
+          <label><span data-i18n="setup.from_led">From LED</span> <select id="del-from"></select></label>
+          <label><span data-i18n="setup.count">Count</span> <input id="del-count" type="number" min="1" step="1" value="1"></label>
+          <button type="button" id="del-go" data-i18n="setup.remove_go">Remove and adjust addresses</button>
         </div>
       </article>
       <article id="art-led-namen">
-        <h2 id="nam-title">5. LED-Namen</h2>
-        <p>
-          Namen für einzelne LEDs, RGB-Anteile oder Bereiche. In den Listen steht der Name
-          anstelle von „Nr. …“ (z. B. LED 1 (Straßenlaterne)). Mehrere Farbnamen erscheinen mit / getrennt
-          (LED 12 (Halt / Fahrt)). Beim Einfügen oder Entfernen im Bus wandern die Namen mit den LEDs mit.
-          Die Nummern gelten für den gewählten Ausgang (LED 1 ist die erste LED dort).
+        <h2 id="nam-title" data-i18n="setup.names">5. LED names</h2>
+        <p data-i18n="setup.names_help">
+          Names for single LEDs, RGB channels or ranges. In lists the name
+          replaces “No. …” (e.g. LED 1 (street lamp)). Multiple color names appear separated by /
+          (LED 12 (Halt / Proceed)). Inserting or removing on the bus moves the names with the LEDs.
+          Numbers apply to the selected output (LED 1 is the first LED there).
         </p>
         <div class="row wrap">
-          <label>Controller <select id="nam-ctrl"></select></label>
-          <label>Ausgang <select id="nam-out"></select></label>
+          <label><span data-i18n="setup.controller">Controller</span> <select id="nam-ctrl"></select></label>
+          <label><span data-i18n="setup.output">Output</span> <select id="nam-out"></select></label>
         </div>
-        <textarea id="nam-text" rows="6" placeholder="LED1 = Straßenlaterne&#10;3-7 = Haus3&#10;12r = Halt&#10;12g = Fahrt"></textarea>
-        <button type="button" id="nam-go">Namen speichern</button>
+        <textarea id="nam-text" rows="6" data-i18n-placeholder="ph.names" placeholder="LED1 = street lamp&#10;3-7 = House3&#10;12r = Halt&#10;12g = Proceed"></textarea>
+        <button type="button" id="nam-go" data-i18n="setup.save_names">Save names</button>
       </article>
     </section>
 
     <section id="tab-objects" class="hidden">
       <article id="art-lampe">
-        <h2 id="l-title">Lampe anlegen</h2>
+        <h2 id="l-title" data-i18n="obj.lamp.create">Create lamp</h2>
         <div class="row wrap">
-          <input id="l-id" placeholder="ID laterne-01">
-          <label>Controller <select id="l-ctrl"></select></label>
-          <label>Ausgang <select id="l-out"></select></label>
-          <label>LEDs (Strg für mehrere) <select id="l-leds" multiple size="6"></select></label>
-          <label title="Rot, Grün oder Blau dieses Pixels, oder alle drei">RGB-Anteil
+          <input id="l-id" data-i18n-placeholder="ph.lamp_id" placeholder="ID laterne-01">
+          <label><span data-i18n="setup.controller">Controller</span> <select id="l-ctrl"></select></label>
+          <label><span data-i18n="setup.output">Output</span> <select id="l-out"></select></label>
+          <label><span data-i18n="field.leds_multi">LEDs (Ctrl for several)</span> <select id="l-leds" multiple size="6"></select></label>
+          <label data-i18n-title="field.channel_title" title="Red, green or blue of this pixel, or all three"><span data-i18n="field.channel">RGB channel</span>
             <select id="l-anteil">
-              <option value="rgb">alle (RGB)</option>
-              <option value="r">nur Rot</option>
-              <option value="g">nur Grün</option>
-              <option value="b">nur Blau</option>
+              <option value="rgb" data-i18n="field.channel.all">all (RGB)</option>
+              <option value="r" data-i18n="field.channel.r">red only</option>
+              <option value="g" data-i18n="field.channel.g">green only</option>
+              <option value="b" data-i18n="field.channel.b">blue only</option>
             </select>
           </label>
-          <label>Farbe
+          <label><span data-i18n="field.color">Color</span>
             <span class="color-field">
-              <span class="color-swatch" title="Farbe wählen"></span>
+              <span class="color-swatch" data-i18n-title="field.color_pick" title="Pick color"></span>
               <input id="l-farbe" value="FFFFFF" placeholder="RRGGBB" size="8" spellcheck="false" autocomplete="off">
             </span>
           </label>
-          <button id="l-add">Lampe speichern</button>
-          <button type="button" id="l-cancel" class="secondary hidden">Abbrechen</button>
+          <button id="l-add" data-i18n="btn.save_lamp">Save lamp</button>
+          <button type="button" id="l-cancel" class="secondary hidden" data-i18n="btn.cancel">Cancel</button>
         </div>
       </article>
       <article id="art-haus">
-        <h2 id="h-title">Haus anlegen</h2>
-        <p>Fenster über die Dropdowns wählen und „Fenster übernehmen“. Die Zeilen nutzen globale LED-Indizes.</p>
+        <h2 id="h-title" data-i18n="obj.house.create">Create house</h2>
+        <p data-i18n="house.help">Choose windows with the dropdowns and “Add window”. Rows use global LED indices.</p>
         <div class="row wrap">
-          <input id="h-id" placeholder="ID haus-baecker">
-          <label>Controller <select id="h-ctrl"></select></label>
+          <input id="h-id" data-i18n-placeholder="ph.house_id" placeholder="ID haus-baecker">
+          <label><span data-i18n="setup.controller">Controller</span> <select id="h-ctrl"></select></label>
           <select id="h-mode">
-            <option value="zufaellig">zufällig</option>
-            <option value="nacheinander">nacheinander</option>
-            <option value="sofort">sofort</option>
+            <option value="random" data-i18n="turn_on.random">random</option>
+            <option value="sequential" data-i18n="turn_on.sequential">sequential</option>
+            <option value="immediate" data-i18n="turn_on.immediate">immediate</option>
           </select>
         </div>
         <div class="row wrap">
-          <input id="h-win-name" placeholder="Fenstername wohnzimmer">
-          <label>Ausgang <select id="h-out"></select></label>
-          <label>LEDs <select id="h-leds" multiple size="6"></select></label>
-          <label title="Rot, Grün oder Blau dieses Pixels, oder alle drei">RGB-Anteil
+          <input id="h-win-name" data-i18n-placeholder="ph.window" placeholder="Window name living-room">
+          <label><span data-i18n="setup.output">Output</span> <select id="h-out"></select></label>
+          <label><span data-i18n="field.leds">LEDs</span> <select id="h-leds" multiple size="6"></select></label>
+          <label data-i18n-title="field.channel_title" title="Red, green or blue of this pixel, or all three"><span data-i18n="field.channel">RGB channel</span>
             <select id="h-anteil">
-              <option value="rgb">alle (RGB)</option>
-              <option value="r">nur Rot</option>
-              <option value="g">nur Grün</option>
-              <option value="b">nur Blau</option>
+              <option value="rgb" data-i18n="field.channel.all">all (RGB)</option>
+              <option value="r" data-i18n="field.channel.r">red only</option>
+              <option value="g" data-i18n="field.channel.g">green only</option>
+              <option value="b" data-i18n="field.channel.b">blue only</option>
             </select>
           </label>
-          <label>Farbe
+          <label><span data-i18n="field.color">Color</span>
             <span class="color-field">
-              <span class="color-swatch" title="Farbe wählen"></span>
+              <span class="color-swatch" data-i18n-title="field.color_pick" title="Pick color"></span>
               <input id="h-win-farbe" value="FFFFFF" placeholder="RRGGBB" size="8" spellcheck="false" autocomplete="off">
             </span>
           </label>
-          <button type="button" id="h-win-add" class="secondary">Fenster übernehmen</button>
+          <button type="button" id="h-win-add" class="secondary" data-i18n="btn.add_window">Add window</button>
         </div>
         <textarea id="h-fenster" rows="4" placeholder="wohnzimmer:18,19:FFFFFF"></textarea>
         <div class="row">
-          <button id="h-add">Haus speichern</button>
-          <button type="button" id="h-cancel" class="secondary hidden">Abbrechen</button>
+          <button id="h-add" data-i18n="btn.save_house">Save house</button>
+          <button type="button" id="h-cancel" class="secondary hidden" data-i18n="btn.cancel">Cancel</button>
         </div>
       </article>
       <article id="art-gruppe">
-        <h2 id="g-title">Gruppe anlegen</h2>
+        <h2 id="g-title" data-i18n="obj.group.create">Create group</h2>
         <div class="row wrap">
-          <input id="g-id" placeholder="Gruppe hauptstrasse">
-          <label>Mitglieder (Strg für mehrere) <select id="g-mem" multiple size="6"></select></label>
-          <button id="g-add">Gruppe speichern</button>
-          <button type="button" id="g-cancel" class="secondary hidden">Abbrechen</button>
+          <input id="g-id" data-i18n-placeholder="ph.group_id" placeholder="Group high-street">
+          <label><span data-i18n="section.groups">Groups</span> <select id="g-mem" multiple size="6"></select></label>
+          <button id="g-add" data-i18n="btn.save_group">Save group</button>
+          <button type="button" id="g-cancel" class="secondary hidden" data-i18n="btn.cancel">Cancel</button>
         </div>
       </article>
       <article id="art-sequenz">
-        <h2 id="s-title">Sequenz anlegen</h2>
-        <p>Eine Sequenz schaltet die gewählten Gruppen nacheinander. Zwischen den Objekten wartet sie eine zufällige Pause zwischen Minimum und Maximum (in Sekunden). Beim Ausschalten läuft die Reihenfolge rückwärts.</p>
+        <h2 id="s-title" data-i18n="obj.sequence.create">Create sequence</h2>
+        <p data-i18n="seq.help">A sequence switches the selected groups one after another. Between objects it waits a random pause between minimum and maximum (seconds). Switching off runs the order in reverse.</p>
         <div class="row wrap">
-          <input id="s-id" placeholder="Sequenz seq-nacht">
-          <label>Gruppen (Strg für mehrere) <select id="s-grp" multiple size="6"></select></label>
-          <label>Reihenfolge
+          <input id="s-id" data-i18n-placeholder="ph.seq_id" placeholder="Sequence seq-night">
+          <label><span data-i18n="section.groups">Groups</span> <select id="s-grp" multiple size="6"></select></label>
+          <label><span data-i18n="field.order">Order</span>
             <select id="s-ord">
-              <option value="zufaellig">zufällig</option>
-              <option value="definiert">definiert (Listenreihenfolge)</option>
+              <option value="random" data-i18n="field.order.random">random</option>
+              <option value="defined" data-i18n="field.order.defined">defined (list order)</option>
             </select>
           </label>
-          <label>Pause min. (s) <input id="s-d1" type="number" min="0" step="1" value="2" title="Kürzeste Pause zwischen zwei Objekten"></label>
-          <label>Pause max. (s) <input id="s-d2" type="number" min="0" step="1" value="8" title="Längste Pause zwischen zwei Objekten"></label>
-          <button id="s-add">Sequenz speichern</button>
-          <button type="button" id="s-cancel" class="secondary hidden">Abbrechen</button>
+          <label><span data-i18n="field.pause_min">Pause min. (s)</span> <input id="s-d1" type="number" min="0" step="1" value="2"></label>
+          <label><span data-i18n="field.pause_max">Pause max. (s)</span> <input id="s-d2" type="number" min="0" step="1" value="8"></label>
+          <button id="s-add" data-i18n="btn.save_sequence">Save sequence</button>
+          <button type="button" id="s-cancel" class="secondary hidden" data-i18n="btn.cancel">Cancel</button>
         </div>
       </article>
       <article id="art-signal">
-        <h2 id="sig-title">Signal anlegen</h2>
-        <p>Begriffe über die Dropdowns wählen und „Begriff übernehmen“. Halt und Fahrt dürfen dieselbe LED nutzen, wenn Rot und Grün als RGB-Anteil getrennt sind – dann entsteht je Farbe ein Eintrag.</p>
+        <h2 id="sig-title" data-i18n="obj.signal.create">Create signal</h2>
+        <p data-i18n="sig.help">Choose aspects with the dropdowns and “Add aspect”. Halt and proceed may share the same LED if red and green are split as RGB channels – then each color gets its own entry.</p>
         <div class="row wrap">
-          <input id="sig-id" placeholder="signal-ausfahrt">
-          <label>Controller <select id="sig-ctrl"></select></label>
-          <label>Ausgang <select id="sig-out"></select></label>
+          <input id="sig-id" data-i18n-placeholder="ph.signal_id" placeholder="signal-exit">
+          <label><span data-i18n="setup.controller">Controller</span> <select id="sig-ctrl"></select></label>
+          <label><span data-i18n="setup.output">Output</span> <select id="sig-out"></select></label>
         </div>
         <div class="row wrap">
-          <input id="sig-asp-n" type="number" min="0" value="0" title="Begriff-Nummer" placeholder="Nr.">
-          <input id="sig-asp-name" placeholder="Halt" value="Halt">
-          <label>LEDs <select id="sig-leds" multiple size="6"></select></label>
-          <label title="Rot, Grün oder Blau dieses Pixels, oder alle drei">RGB-Anteil
+          <input id="sig-asp-n" type="number" min="0" value="0" placeholder="Nr.">
+          <input id="sig-asp-name" data-i18n-placeholder="ph.aspect" placeholder="Halt" value="Halt">
+          <label><span data-i18n="field.leds">LEDs</span> <select id="sig-leds" multiple size="6"></select></label>
+          <label data-i18n-title="field.channel_title" title="Red, green or blue of this pixel, or all three"><span data-i18n="field.channel">RGB channel</span>
             <select id="sig-anteil">
-              <option value="rgb">alle (RGB)</option>
-              <option value="r">nur Rot</option>
-              <option value="g">nur Grün</option>
-              <option value="b">nur Blau</option>
+              <option value="rgb" data-i18n="field.channel.all">all (RGB)</option>
+              <option value="r" data-i18n="field.channel.r">red only</option>
+              <option value="g" data-i18n="field.channel.g">green only</option>
+              <option value="b" data-i18n="field.channel.b">blue only</option>
             </select>
           </label>
-          <label>Farbe
+          <label><span data-i18n="field.color">Color</span>
             <span class="color-field">
-              <span class="color-swatch" title="Farbe wählen"></span>
+              <span class="color-swatch" data-i18n-title="field.color_pick" title="Pick color"></span>
               <input id="sig-farbe" value="FF0000" placeholder="RRGGBB" size="8" spellcheck="false" autocomplete="off">
             </span>
           </label>
-          <button type="button" id="sig-asp-add" class="secondary">Begriff übernehmen</button>
+          <button type="button" id="sig-asp-add" class="secondary" data-i18n="btn.add_aspect">Add aspect</button>
         </div>
         <textarea id="sig-asp" rows="3" placeholder="0:Halt:12=FF0000=r&#10;1:Fahrt:12=00FF00=g"></textarea>
         <div class="row">
-          <button id="sig-add">Signal speichern</button>
-          <button type="button" id="sig-cancel" class="secondary hidden">Abbrechen</button>
+          <button id="sig-add" data-i18n="btn.save_signal">Save signal</button>
+          <button type="button" id="sig-cancel" class="secondary hidden" data-i18n="btn.cancel">Cancel</button>
         </div>
       </article>
       <article id="art-spezial">
-        <h2 id="sp-title">Spezial anlegen</h2>
-        <p>WLED-Effekt auf den gewählten LEDs. Zusammenhängende LEDs bilden ein Segment. Steuerung schaltet nur ein und aus. Bereits verwendete LEDs sind in den Listen markiert. WLED-Effekte wirken immer auf das ganze Pixel; der RGB-Anteil gilt beim Ausschalten.</p>
+        <h2 id="sp-title" data-i18n="obj.special.create">Create special</h2>
+        <p data-i18n="sp.help">WLED effect on the selected LEDs. Contiguous LEDs form a segment. Switching only turns it on and off. Already used LEDs are marked in the lists. WLED effects always act on the whole pixel; the RGB channel applies when turning off.</p>
         <div class="row wrap">
-          <input id="sp-id" placeholder="ID kamin-feuer">
-          <label>Controller <select id="sp-ctrl"></select></label>
-          <label>Ausgang <select id="sp-out"></select></label>
-          <label>LEDs (Strg für mehrere) <select id="sp-leds" multiple size="6"></select></label>
-          <label title="Rot, Grün oder Blau dieses Pixels, oder alle drei">RGB-Anteil
+          <input id="sp-id" data-i18n-placeholder="ph.special_id" placeholder="ID fireplace">
+          <label><span data-i18n="setup.controller">Controller</span> <select id="sp-ctrl"></select></label>
+          <label><span data-i18n="setup.output">Output</span> <select id="sp-out"></select></label>
+          <label><span data-i18n="field.leds_multi">LEDs (Ctrl for several)</span> <select id="sp-leds" multiple size="6"></select></label>
+          <label data-i18n-title="field.channel_title" title="Red, green or blue of this pixel, or all three"><span data-i18n="field.channel">RGB channel</span>
             <select id="sp-anteil">
-              <option value="rgb">alle (RGB)</option>
-              <option value="r">nur Rot</option>
-              <option value="g">nur Grün</option>
-              <option value="b">nur Blau</option>
+              <option value="rgb" data-i18n="field.channel.all">all (RGB)</option>
+              <option value="r" data-i18n="field.channel.r">red only</option>
+              <option value="g" data-i18n="field.channel.g">green only</option>
+              <option value="b" data-i18n="field.channel.b">blue only</option>
             </select>
           </label>
         </div>
         <div class="row wrap">
-          <label>Effekt <select id="sp-fx"></select></label>
-          <label>Palette <select id="sp-pal"></select></label>
-          <label>Geschwindigkeit <input id="sp-sx" type="number" min="0" max="255" step="1" value="128"></label>
-          <label>Intensität <input id="sp-ix" type="number" min="0" max="255" step="1" value="128"></label>
-          <label>Farbe
+          <label><span data-i18n="field.effect">Effect</span> <select id="sp-fx"></select></label>
+          <label><span data-i18n="field.palette">Palette</span> <select id="sp-pal"></select></label>
+          <label><span data-i18n="field.speed">Speed</span> <input id="sp-sx" type="number" min="0" max="255" step="1" value="128"></label>
+          <label><span data-i18n="field.intensity">Intensity</span> <input id="sp-ix" type="number" min="0" max="255" step="1" value="128"></label>
+          <label><span data-i18n="field.color">Color</span>
             <span class="color-field">
-              <span class="color-swatch" title="Farbe wählen"></span>
+              <span class="color-swatch" data-i18n-title="field.color_pick" title="Pick color"></span>
               <input id="sp-farbe" value="FFFFFF" placeholder="RRGGBB" size="8" spellcheck="false" autocomplete="off">
             </span>
           </label>
-          <button id="sp-add">Spezial speichern</button>
-          <button type="button" id="sp-cancel" class="secondary hidden">Abbrechen</button>
+          <button id="sp-add" data-i18n="btn.save_special">Save special</button>
+          <button type="button" id="sp-cancel" class="secondary hidden" data-i18n="btn.cancel">Cancel</button>
         </div>
       </article>
       <article id="art-fahrzeug">
-        <h2 id="v-title">Fahrzeug anlegen</h2>
-        <p>
-          Standmodell mit Lichtkanälen. Ein Pixel hat drei RGB-Anteile (R, G, B) –
-          damit lassen sich drei einzelne LEDs unabhängig schalten.
-          Rundumlicht: entweder LEDs nacheinander oder die RGB-Anteile nacheinander
-          (ein WS2811 = drei LEDs, R→G→B). Blinker mehrerer Fahrzeuge laufen
-          absichtlich leicht unterschiedlich schnell.
+        <h2 id="v-title" data-i18n="obj.vehicle.create">Create vehicle</h2>
+        <p data-i18n="veh.help">
+          Static model with light channels. One pixel has three RGB channels (R, G, B) –
+          that lets you switch three individual LEDs independently.
+          Beacon: either LEDs in sequence or the RGB channels in sequence
+          (one WS2811 = three LEDs, R→G→B). Indicators of several vehicles run
+          at slightly different speeds on purpose.
         </p>
         <div class="row wrap">
-          <input id="v-id" placeholder="ID pkw-rot">
-          <label>Controller <select id="v-ctrl"></select></label>
-          <label>Blink-Grundperiode (s)
-            <input id="v-blink" type="number" min="0.2" step="0.05" value="0.75" title="Basis; jedes Fahrzeug weicht etwas ab">
+          <input id="v-id" data-i18n-placeholder="ph.vehicle_id" placeholder="ID car-red">
+          <label><span data-i18n="setup.controller">Controller</span> <select id="v-ctrl"></select></label>
+          <label data-i18n-title="field.blink_title" title="Base; each vehicle differs a little"><span data-i18n="field.blink">Blink base period (s)</span>
+            <input id="v-blink" type="number" min="0.2" step="0.05" value="0.75">
           </label>
-          <label>Rundum-Schritt (s)
-            <input id="v-rundum" type="number" min="0.04" step="0.02" value="0.12" title="Dauer bis zum nächsten Pixel oder Farbkanal">
+          <label data-i18n-title="field.beacon_title" title="Duration until the next pixel or color channel"><span data-i18n="field.beacon">Beacon step (s)</span>
+            <input id="v-rundum" type="number" min="0.04" step="0.02" value="0.12">
           </label>
         </div>
-        <h3>Kanäle</h3>
+        <h3 data-i18n="veh.channels">Channels</h3>
         <div class="row wrap">
-          <input id="v-ch-name" placeholder="Kanalname scheinwerfer">
-          <label>Ausgang <select id="v-out"></select></label>
-          <label>LEDs <select id="v-leds" multiple size="6"></select></label>
-          <label title="Rot, Grün oder Blau dieses Pixels, oder alle drei">RGB-Anteil
+          <input id="v-ch-name" data-i18n-placeholder="ph.channel" placeholder="Channel name headlights">
+          <label><span data-i18n="setup.output">Output</span> <select id="v-out"></select></label>
+          <label><span data-i18n="field.leds">LEDs</span> <select id="v-leds" multiple size="6"></select></label>
+          <label data-i18n-title="field.channel_title" title="Red, green or blue of this pixel, or all three"><span data-i18n="field.channel">RGB channel</span>
             <select id="v-anteil">
-              <option value="rgb">alle (RGB)</option>
-              <option value="r">nur Rot</option>
-              <option value="g">nur Grün</option>
-              <option value="b">nur Blau</option>
+              <option value="rgb" data-i18n="field.channel.all">all (RGB)</option>
+              <option value="r" data-i18n="field.channel.r">red only</option>
+              <option value="g" data-i18n="field.channel.g">green only</option>
+              <option value="b" data-i18n="field.channel.b">blue only</option>
             </select>
           </label>
-          <label>Farbe
+          <label><span data-i18n="field.color">Color</span>
             <span class="color-field">
-              <span class="color-swatch" title="Farbe wählen"></span>
+              <span class="color-swatch" data-i18n-title="field.color_pick" title="Pick color"></span>
               <input id="v-farbe" value="FFFFFF" placeholder="RRGGBB" size="8" spellcheck="false" autocomplete="off">
             </span>
           </label>
-          <label>Art
+          <label><span data-i18n="field.type">Type</span>
             <select id="v-art">
-              <option value="dauer">Dauerlicht</option>
-              <option value="blinker">Blinker</option>
-              <option value="rundum">Rundumlicht</option>
-              <option value="blitz">Blitz</option>
-              <option value="doppelblitz">Doppelblitz</option>
+              <option value="continuous" data-i18n="type.continuous">Steady</option>
+              <option value="blinker" data-i18n="type.blinker">Indicator</option>
+              <option value="beacon" data-i18n="type.beacon">Beacon</option>
+              <option value="strobe" data-i18n="type.strobe">Strobe</option>
+              <option value="double_strobe" data-i18n="type.double_strobe">Double strobe</option>
             </select>
           </label>
-          <label id="v-schritte-wrap" title="Nur Rundumlicht: ganze Pixel oder die RGB-Pins eines WS2811 nacheinander">Rundum-Schritte
+          <label id="v-schritte-wrap" data-i18n-title="field.steps_title" title="Beacon only: whole pixels or the RGB pins of a WS2811 in sequence"><span data-i18n="field.steps">Beacon steps</span>
             <select id="v-schritte">
-              <option value="auto">automatisch</option>
-              <option value="leds">LEDs nacheinander</option>
-              <option value="kanaele">RGB-Anteile nacheinander</option>
+              <option value="auto" data-i18n="steps.auto">automatic</option>
+              <option value="leds" data-i18n="steps.leds">LEDs in sequence</option>
+              <option value="channels" data-i18n="steps.channels">RGB channels in sequence</option>
             </select>
           </label>
-          <button type="button" id="v-ch-add" class="secondary">Kanal übernehmen</button>
+          <button type="button" id="v-ch-add" class="secondary" data-i18n="btn.add_channel">Add channel</button>
         </div>
         <p class="sub" id="v-rundum-hint"></p>
-        <textarea id="v-kanaele" rows="4" placeholder="scheinwerfer:30:rgb:FFFFCC:dauer&#10;blinker-l:31:r:FF8000:blinker&#10;blinker-r:31:g:FF8000:blinker&#10;rundum:33:rgb:0000FF:rundum:kanaele"></textarea>
-        <h3>Modi</h3>
-        <p>Welche Kanäle in welchem Schaltzustand aktiv sind. „Standard-Modi“ erzeugt Aus, Licht, Warnblinker und Einsatz je nach Kanalarten.</p>
+        <textarea id="v-kanaele" rows="4" placeholder="headlights:30:rgb:FFFFCC:continuous&#10;indicator-l:31:r:FF8000:blinker&#10;indicator-r:31:g:FF8000:blinker&#10;beacon:33:rgb:0000FF:beacon:channels"></textarea>
+        <h3 data-i18n="veh.modes">Modes</h3>
+        <p data-i18n="veh.modes_help">Which channels are active in which switch state. “Default modes” creates Off, Lights, Hazards and Emergency depending on the channel types.</p>
         <div class="row wrap">
-          <input id="v-mod-n" type="number" min="0" value="0" title="Modus-Nummer" placeholder="Nr.">
-          <input id="v-mod-name" placeholder="Licht">
-          <label>Kanäle <select id="v-mod-kan" multiple size="5"></select></label>
-          <button type="button" id="v-mod-add" class="secondary">Modus übernehmen</button>
-          <button type="button" id="v-mod-default" class="secondary">Standard-Modi</button>
+          <input id="v-mod-n" type="number" min="0" value="0" placeholder="Nr.">
+          <input id="v-mod-name" data-i18n-placeholder="ph.mode" placeholder="Lights">
+          <label><span data-i18n="veh.channels">Channels</span> <select id="v-mod-kan" multiple size="5"></select></label>
+          <button type="button" id="v-mod-add" class="secondary" data-i18n="btn.add_mode">Add mode</button>
+          <button type="button" id="v-mod-default" class="secondary" data-i18n="btn.default_modes">Default modes</button>
         </div>
-        <textarea id="v-modi" rows="3" placeholder="0:Aus:&#10;1:Licht:scheinwerfer&#10;2:Warnblinker:scheinwerfer,blinker-l,blinker-r"></textarea>
+        <textarea id="v-modi" rows="3" placeholder="0:Off:&#10;1:Lights:headlights&#10;2:Hazards:headlights,indicator-l,indicator-r"></textarea>
         <div class="row">
-          <button id="v-add">Fahrzeug speichern</button>
-          <button type="button" id="v-cancel" class="secondary hidden">Abbrechen</button>
+          <button id="v-add" data-i18n="btn.save_vehicle">Save vehicle</button>
+          <button type="button" id="v-cancel" class="secondary hidden" data-i18n="btn.cancel">Cancel</button>
         </div>
       </article>
     </section>
 
     <section id="tab-config" class="hidden">
       <article>
-        <p>Struktur der <code>config.yaml</code> als JSON. Nach „Übernehmen“ wird validiert und geladen (Adapterwechsel kann die BiDiB-Verbindung kurz trennen).</p>
+        <p data-i18n="yaml.help">Structure of config.yaml as JSON. After “Apply” it is validated and loaded (changing the adapter may briefly drop the BiDiB connection).</p>
         <textarea id="yaml" rows="22" spellcheck="false"></textarea>
         <div class="row">
-          <button id="yml-apply">Übernehmen</button>
-          <button id="yml-reload" class="secondary">Von Disk neu laden</button>
+          <button id="yml-apply" data-i18n="btn.apply">Apply</button>
+          <button id="yml-reload" class="secondary" data-i18n="btn.reload">Reload from disk</button>
         </div>
         <pre id="yml-err" class="error"></pre>
       </article>
     </section>
   </main>
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
-  <div id="color-picker" class="color-picker hidden" role="dialog" aria-label="Farbe wählen">
+  <div id="color-picker" class="color-picker hidden" role="dialog" data-i18n-aria="field.color_pick" aria-label="Pick color">
     <div class="color-picker-preview" id="cp-preview"></div>
     <div class="color-picker-visuals">
-      <div class="color-wheel" id="cp-wheel" title="Farbrad (Farbton)">
+      <div class="color-wheel" id="cp-wheel">
         <div class="color-wheel-inner"></div>
         <div class="hue-marker" id="cp-hue-marker"></div>
       </div>
-      <div class="sv-pad" id="cp-sv" title="Sättigung und Helligkeit">
+      <div class="sv-pad" id="cp-sv">
         <div class="sv-marker" id="cp-sv-marker"></div>
       </div>
     </div>
-    <label>HTML <input id="cp-hex" placeholder="#FFFFFF" spellcheck="false" autocomplete="off"></label>
+    <label><span data-i18n="color.html">HTML</span> <input id="cp-hex" placeholder="#FFFFFF" spellcheck="false" autocomplete="off"></label>
     <div class="color-picker-rgb">
       <label>R <input id="cp-r" type="number" min="0" max="255"></label>
       <label>G <input id="cp-g" type="number" min="0" max="255"></label>
       <label>B <input id="cp-b" type="number" min="0" max="255"></label>
     </div>
   </div>
-  <script src="/static/app.js?v=33"></script>
+  <script src="/static/app.js?v=34"></script>
 </body>
 </html>
