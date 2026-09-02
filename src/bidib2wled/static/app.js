@@ -610,12 +610,16 @@ for (const group of LED_GROUPS) {
         const ctrlEl = document.getElementById(group.ctrl);
         const outEl = document.getElementById(group.out);
         fillLedSelect(group.led, ctrlEl && ctrlEl.value, outEl && outEl.value, group.anteil, group.insert, group.remove);
+        if (group.led === "v-leds") updateRundumHint();
       });
     }
   }
   const ledEl = document.getElementById(group.led);
   if (ledEl) {
-    ledEl.addEventListener("change", () => showChosenLeds(ledEl));
+    ledEl.addEventListener("change", () => {
+      showChosenLeds(ledEl);
+      if (group.led === "v-leds") updateRundumHint();
+    });
   }
 }
 
@@ -1396,7 +1400,10 @@ function loadSpecial(id, spec) {
 
 function kanaeleToText(kanaele) {
   return Object.entries(kanaele || {})
-    .map(([name, ch]) => `${name}:${(ch.leds || []).join(",")}:${ch.anteil || "rgb"}:${ch.farbe || DEFAULT_COLOR}:${ch.art || "dauer"}`)
+    .map(([name, ch]) => {
+      const base = `${name}:${(ch.leds || []).join(",")}:${ch.anteil || "rgb"}:${ch.farbe || DEFAULT_COLOR}:${ch.art || "dauer"}`;
+      return ch.schritte && ch.schritte !== "auto" ? `${base}:${ch.schritte}` : base;
+    })
     .join("\n");
 }
 
@@ -1414,13 +1421,40 @@ function parseKanaelLines(text) {
       anteil: parts[2] || "rgb",
       farbe: (parts[3] || DEFAULT_COLOR).trim(),
       art: parts[4] || "dauer",
+      schritte: parts[5] || "auto",
     });
   }
   return lines;
 }
 
 function kanaelLinesToText(lines) {
-  return lines.map((ch) => `${ch.name}:${ch.leds}:${ch.anteil}:${ch.farbe}:${ch.art}`).join("\n");
+  return lines.map((ch) => {
+    const base = `${ch.name}:${ch.leds}:${ch.anteil}:${ch.farbe}:${ch.art}`;
+    return ch.schritte && ch.schritte !== "auto" ? `${base}:${ch.schritte}` : base;
+  }).join("\n");
+}
+
+function updateRundumHint() {
+  const hint = $("#v-rundum-hint");
+  if (!hint) return;
+  const art = $("#v-art") && $("#v-art").value;
+  if (art !== "rundum") {
+    hint.textContent = "";
+    return;
+  }
+  const n = selectedLocals("v-leds").length;
+  const anteil = ($("#v-anteil") && $("#v-anteil").value) || "rgb";
+  const schritte = ($("#v-schritte") && $("#v-schritte").value) || "auto";
+  const comps = anteil === "r" || anteil === "g" || anteil === "b" ? 1 : 3;
+  if (!n) {
+    hint.textContent = "WS2811 als 3er-Rundum: eine LED, RGB-Anteil „alle“, Schritte „RGB-Anteile nacheinander“.";
+    return;
+  }
+  const walk = schritte === "kanaele" || (schritte !== "leds" && n === 1 && comps > 1);
+  const steps = walk ? n * comps : n;
+  hint.textContent = walk
+    ? `${steps} Schritte über RGB-Anteile – ein WS2811 mit „alle (RGB)“ ist ein 3er-Rundum (R→G→B).`
+    : `${steps} Schritte, je eine LED (gewählte RGB-Anteile zusammen).`;
 }
 
 function modiToText(modi) {
@@ -1502,6 +1536,8 @@ function loadVehicle(id, vehicle) {
   fillVehicleModeChannels();
   $("#v-ch-name").value = "";
   setColorInput("v-farbe", DEFAULT_COLOR);
+  if ($("#v-schritte")) $("#v-schritte").value = "auto";
+  updateRundumHint();
   $("#art-fahrzeug").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -1573,7 +1609,10 @@ function cancelEdit(kind) {
     $("#v-blink").value = "0.75";
     $("#v-rundum").value = "0.12";
     setColorInput("v-farbe", DEFAULT_COLOR);
+    if ($("#v-anteil")) $("#v-anteil").value = "rgb";
+    if ($("#v-schritte")) $("#v-schritte").value = "auto";
     fillVehicleModeChannels([]);
+    updateRundumHint();
   }
   setEditing(null, null);
 }
@@ -1868,12 +1907,18 @@ $("#sp-add").onclick = () => {
 
 $("#v-kanaele").addEventListener("input", () => fillVehicleModeChannels());
 
+["v-art", "v-schritte"].forEach((id) => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener("change", updateRundumHint);
+});
+
 $("#v-ch-add").onclick = () => {
   const name = $("#v-ch-name").value.trim();
   const leds = toGlobals($("#v-ctrl").value, $("#v-out").value, selectedLocals("v-leds"));
   const farbe = parseHex($("#v-farbe").value) || DEFAULT_COLOR;
   const anteil = $("#v-anteil").value || "rgb";
   const art = $("#v-art").value || "dauer";
+  const schritte = art === "rundum" ? ($("#v-schritte") && $("#v-schritte").value) || "auto" : "auto";
   if (!name) {
     notify("Bitte einen Kanalnamen vergeben.", false);
     return;
@@ -1886,7 +1931,7 @@ $("#v-ch-add").onclick = () => {
   const idx = lines.findIndex((ch) => ch.name === name);
   const existed = idx >= 0;
   runAction(existed ? "Kanal aktualisiert" : "Kanal übernommen", () => {
-    const entry = { name, leds: leds.join(","), anteil, farbe, art };
+    const entry = { name, leds: leds.join(","), anteil, farbe, art, schritte };
     if (idx >= 0) lines[idx] = entry;
     else lines.push(entry);
     $("#v-kanaele").value = kanaelLinesToText(lines);
@@ -1931,6 +1976,7 @@ $("#v-add").onclick = () => {
         anteil: line.anteil || "rgb",
         farbe: parseHex(line.farbe) || DEFAULT_COLOR,
         art: line.art || "dauer",
+        ...(line.schritte && line.schritte !== "auto" ? { schritte: line.schritte } : {}),
       };
     }
     if (!Object.keys(kanaele).length) throw new Error("Bitte mindestens einen Kanal übernehmen.");

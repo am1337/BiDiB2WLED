@@ -217,6 +217,34 @@ def test_vehicle_anteil_and_default_modi():
     assert default_vehicle_modi(vehicle.kanaele)[2].kanaele == ["licht", "blinker"]
 
 
+def test_vehicle_rundum_schritte_aliases_and_yaml_omit_auto(tmp_path: Path):
+    cfg = AppConfig.model_validate(
+        {
+            "controller": [{"name": "dorf", "ip": "127.0.0.1", "leds": 8}],
+            "fahrzeuge": {
+                "fw": {
+                    "controller": "dorf",
+                    "kanaele": {
+                        "klein": {
+                            "leds": [1],
+                            "anteil": "rgb",
+                            "art": "rundum",
+                            "schritte": "anteile",
+                        },
+                        "balken": {"leds": [2, 3], "art": "rundum"},
+                    },
+                }
+            },
+        }
+    )
+    assert cfg.fahrzeuge["fw"].kanaele["klein"].schritte == "kanaele"
+    assert cfg.fahrzeuge["fw"].kanaele["balken"].schritte == "auto"
+    save_config(tmp_path / "c.yaml", cfg)
+    text = (tmp_path / "c.yaml").read_text(encoding="utf-8")
+    assert "schritte: kanaele" in text
+    assert "schritte: auto" not in text
+
+
 def test_vehicle_unknown_mode_channel_rejected():
     try:
         VehicleConfig.model_validate(

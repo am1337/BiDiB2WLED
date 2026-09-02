@@ -15,6 +15,15 @@ def test_rundum_steps_single_ws2811():
     assert rundum_steps([7], "rgb") == [(7, ("r",)), (7, ("g",)), (7, ("b",))]
     assert rundum_steps([4, 5, 6], "rgb") == [(4, ("r", "g", "b")), (5, ("r", "g", "b")), (6, ("r", "g", "b"))]
     assert rundum_steps([4, 5], "r") == [(4, ("r",)), (5, ("r",))]
+    assert rundum_steps([7], "rgb", "leds") == [(7, ("r", "g", "b"))]
+    assert rundum_steps([4, 5], "rgb", "kanaele") == [
+        (4, ("r",)),
+        (4, ("g",)),
+        (4, ("b",)),
+        (5, ("r",)),
+        (5, ("g",)),
+        (5, ("b",)),
+    ]
 
 
 def test_blink_periods_differ_per_vehicle():
@@ -102,3 +111,34 @@ def test_rundum_cycles_rgb_of_one_pixel():
         assert (green > 0) is (component == "g")
         assert (blue > 0) is (component == "b")
         assert pixels[0] != (0, 0, 0)
+
+
+def test_rundum_kanaele_walks_each_channel_of_two_pixels():
+    vehicle = _vehicle(
+        {
+            "controller": "dorf",
+            "kanaele": {
+                "rundum": {
+                    "leds": [2, 3],
+                    "anteil": "rgb",
+                    "farbe": "0000FF",
+                    "art": "rundum",
+                    "schritte": "kanaele",
+                }
+            },
+            "rundum_schritt": "0.10s",
+        }
+    )
+    _, phase = vehicle_timing("turm", vehicle.blink_period_s)
+    expected = [(2, 0), (2, 1), (2, 2), (3, 0), (3, 1), (3, 2)]
+    for index, (led, component) in enumerate(expected):
+        now = -phase + 0.10 * index + 0.01
+        pixels = [(0, 0, 0)] * 5
+        apply_vehicle_to_pixels(pixels, vehicle, "turm", 1, now)
+        for idx, pixel in enumerate(pixels):
+            if idx != led:
+                assert pixel == (0, 0, 0)
+            else:
+                assert pixel[component] > 0
+                assert pixel[(component + 1) % 3] == 0
+                assert pixel[(component + 2) % 3] == 0

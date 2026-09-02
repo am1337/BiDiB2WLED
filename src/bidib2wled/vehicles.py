@@ -12,11 +12,19 @@ from bidib2wled.wled import rgb_from_hex
 _PERIOD_SPREAD = 0.22
 
 
-def rundum_steps(leds: list[int], anteil: str) -> list[tuple[int, tuple[str, ...]]]:
-    """Schritte eines Rundumlichts: ein WS2811 (R→G→B) oder mehrere Pixel nacheinander."""
+def rundum_steps(leds: list[int], anteil: str, schritte: str = "auto") -> list[tuple[int, tuple[str, ...]]]:
+    """Schritte eines Rundumlichts.
+
+    `leds`: ein Schritt je Pixel (alle gewählten RGB-Anteile zusammen).
+    `kanaele`: ein Schritt je Farbkanal, z. B. ein WS2811 als 3 LEDs (R→G→B).
+    `auto`: bei einer LED und mehreren Anteilen wie `kanaele`, sonst wie `leds`.
+    """
     components = expand_anteil(anteil)
-    if len(leds) == 1 and len(components) > 1:
-        return [(leds[0], (component,)) for component in components]
+    walk_channels = schritte == "kanaele" or (
+        schritte != "leds" and len(leds) == 1 and len(components) > 1
+    )
+    if walk_channels:
+        return [(led, (component,)) for led in leds for component in components]
     return [(led, components) for led in leds]
 
 
@@ -105,7 +113,7 @@ def apply_vehicle_to_pixels(
             continue
         color = rgb_from_hex(channel.farbe, channel.helligkeit)
         if channel.art == "rundum":
-            steps = rundum_steps(channel.leds, channel.anteil)
+            steps = rundum_steps(channel.leds, channel.anteil, channel.schritte)
             if not steps:
                 continue
             led, components = steps[rundum_index(elapsed, step_s, len(steps))]

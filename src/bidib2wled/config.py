@@ -72,6 +72,29 @@ def parse_anteil(value: Any) -> str:
     return mapped
 
 
+_SCHRITTE_ALIASES = {
+    "auto": "auto",
+    "automatisch": "auto",
+    "leds": "leds",
+    "led": "leds",
+    "pixel": "leds",
+    "pixeln": "leds",
+    "kanaele": "kanaele",
+    "kanäle": "kanaele",
+    "anteile": "kanaele",
+    "channels": "kanaele",
+    "rgb": "kanaele",
+}
+
+
+def parse_schritte(value: Any) -> str:
+    raw = str(value or "auto").strip().lower().replace("ä", "ae")
+    mapped = _SCHRITTE_ALIASES.get(raw)
+    if mapped is None:
+        raise ValueError(f"schritte muss auto, leds oder kanaele sein: {value!r}")
+    return mapped
+
+
 class LampConfig(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     controller: str
@@ -201,11 +224,17 @@ class VehicleChannelConfig(BaseModel):
     farbe: str = "FFFFFF"
     helligkeit: int = Field(default=180, ge=0, le=255)
     art: Literal["dauer", "blinker", "rundum", "blitz", "doppelblitz"] = "dauer"
+    schritte: Literal["auto", "leds", "kanaele"] = "auto"
 
     @field_validator("anteil", mode="before")
     @classmethod
     def _anteil(cls, value: Any) -> str:
         return parse_anteil(value)
+
+    @field_validator("schritte", mode="before")
+    @classmethod
+    def _schritte(cls, value: Any) -> str:
+        return parse_schritte(value)
 
     @field_validator("art", mode="before")
     @classmethod
@@ -802,17 +831,22 @@ def _omit_empty_anteile(payload: Any) -> Any:
     if not isinstance(payload, dict):
         return payload
     signale = payload.get("signale")
-    if not isinstance(signale, dict):
-        return payload
-    for signal in signale.values():
-        if not isinstance(signal, dict):
+    if isinstance(signale, dict):
+        for signal in signale.values():
+            if not isinstance(signal, dict):
+                continue
+            begriffe = signal.get("begriffe")
+            if not isinstance(begriffe, dict):
+                continue
+            for begriff in begriffe.values():
+                if isinstance(begriff, dict) and not begriff.get("anteile"):
+                    begriff.pop("anteile", None)
+    for vehicle in (payload.get("fahrzeuge") or {}).values():
+        if not isinstance(vehicle, dict):
             continue
-        begriffe = signal.get("begriffe")
-        if not isinstance(begriffe, dict):
-            continue
-        for begriff in begriffe.values():
-            if isinstance(begriff, dict) and not begriff.get("anteile"):
-                begriff.pop("anteile", None)
+        for channel in (vehicle.get("kanaele") or {}).values():
+            if isinstance(channel, dict) and channel.get("schritte") in (None, "auto"):
+                channel.pop("schritte", None)
     return payload
 
 

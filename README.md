@@ -389,14 +389,24 @@ fahrzeuge:
     kanaele:
       scheinwerfer: { leds: [32], anteil: r, farbe: "FFFFCC", art: dauer }
       ruecklicht: { leds: [32], anteil: g, farbe: "FF0000", art: dauer }
-      rundum: { leds: [33], anteil: rgb, farbe: "0000FF", art: rundum }
+      rundum: { leds: [33], anteil: rgb, farbe: "0000FF", art: rundum, schritte: kanaele }
     modi:
       0: { name: Aus, kanaele: [] }
       1: { name: Licht, kanaele: [scheinwerfer, ruecklicht] }
       3: { name: Einsatz, kanaele: [scheinwerfer, ruecklicht, rundum] }
 ```
 
-Farben sind `RRGGBB` ohne `#`. LED-Indizes sind global auf dem Controller (Ausgang 1 beginnt bei 0). `anteil` (`r`/`g`/`b`/`rgb`) ist der RGB-Anteil: so werden die drei LEDs eines Pixels unabhängig geschaltet. Spezial-Objekte nutzen die WLED-Effekte des Controllers (`effekt` / `palette` sind die Nummern aus der Weboberfläche); Effekte wirken auf das ganze Pixel. Fahrzeuge: `art: rundum` auf einem Pixel lässt die drei Anteile nacheinander aufleuchten. Blinker verschiedener Fahrzeuge haben unterschiedliche Perioden.
+Farben sind `RRGGBB` ohne `#`. LED-Indizes sind global auf dem Controller (Ausgang 1 beginnt bei 0). `anteil` (`r`/`g`/`b`/`rgb`) ist der RGB-Anteil: so werden die drei LEDs eines Pixels unabhängig geschaltet. Spezial-Objekte nutzen die WLED-Effekte des Controllers (`effekt` / `palette` sind die Nummern aus der Weboberfläche); Effekte wirken auf das ganze Pixel.
+
+Fahrzeuge, Rundumlicht: `schritte` steuert, was nacheinander aufleuchtet.
+
+| `schritte` | Bedeutung |
+|---|---|
+| `kanaele` | RGB-Anteile nacheinander. Ein WS2811 mit `anteil: rgb` ist ein 3er-Rundum (R→G→B). Mehrere Pixel werden kanalweise weitergezählt. |
+| `leds` | Ganze LEDs nacheinander (gewählte Anteile zusammen). |
+| `auto` (Standard) | Eine LED mit mehreren Anteilen wie `kanaele`, sonst wie `leds`. |
+
+Blinker verschiedener Fahrzeuge haben unterschiedliche Perioden.
 
 ## Ports
 

@@ -273,8 +273,9 @@
         <p>
           Standmodell mit Lichtkanälen. Ein Pixel hat drei RGB-Anteile (R, G, B) –
           damit lassen sich drei einzelne LEDs unabhängig schalten.
-          Rundumlicht auf einem Pixel lässt R, G und B nacheinander aufleuchten.
-          Blinker mehrerer Fahrzeuge laufen absichtlich leicht unterschiedlich schnell.
+          Rundumlicht: entweder LEDs nacheinander oder die RGB-Anteile nacheinander
+          (ein WS2811 = drei LEDs, R→G→B). Blinker mehrerer Fahrzeuge laufen
+          absichtlich leicht unterschiedlich schnell.
         </p>
         <div class="row wrap">
           <input id="v-id" placeholder="ID pkw-rot">
@@ -283,7 +284,7 @@
             <input id="v-blink" type="number" min="0.2" step="0.05" value="0.75" title="Basis; jedes Fahrzeug weicht etwas ab">
           </label>
           <label>Rundum-Schritt (s)
-            <input id="v-rundum" type="number" min="0.04" step="0.02" value="0.12" title="Dauer, bis die nächste LED des Rundumlichts aufleuchtet">
+            <input id="v-rundum" type="number" min="0.04" step="0.02" value="0.12" title="Dauer bis zum nächsten Pixel oder Farbkanal">
           </label>
         </div>
         <h3>Kanäle</h3>
@@ -314,9 +315,17 @@
               <option value="doppelblitz">Doppelblitz</option>
             </select>
           </label>
+          <label title="Nur Rundumlicht: ganze Pixel oder die RGB-Pins eines WS2811 nacheinander">Rundum-Schritte
+            <select id="v-schritte">
+              <option value="auto">automatisch</option>
+              <option value="leds">LEDs nacheinander</option>
+              <option value="kanaele">RGB-Anteile nacheinander</option>
+            </select>
+          </label>
           <button type="button" id="v-ch-add" class="secondary">Kanal übernehmen</button>
         </div>
-        <textarea id="v-kanaele" rows="4" placeholder="scheinwerfer:30:rgb:FFFFCC:dauer&#10;blinker-l:31:r:FF8000:blinker&#10;blinker-r:31:g:FF8000:blinker"></textarea>
+        <p class="sub" id="v-rundum-hint"></p>
+        <textarea id="v-kanaele" rows="4" placeholder="scheinwerfer:30:rgb:FFFFCC:dauer&#10;blinker-l:31:r:FF8000:blinker&#10;blinker-r:31:g:FF8000:blinker&#10;rundum:33:rgb:0000FF:rundum:kanaele"></textarea>
         <h3>Modi</h3>
         <p>Welche Kanäle in welchem Schaltzustand aktiv sind. „Standard-Modi“ erzeugt Aus, Licht, Warnblinker und Einsatz je nach Kanalarten.</p>
         <div class="row wrap">
@@ -365,6 +374,6 @@
       <label>B <input id="cp-b" type="number" min="0" max="255"></label>
     </div>
   </div>
-  <script src="/static/app.js?v=29"></script>
+  <script src="/static/app.js?v=30"></script>
 </body>
 </html>
