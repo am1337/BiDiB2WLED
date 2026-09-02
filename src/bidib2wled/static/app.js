@@ -423,8 +423,8 @@ function usedMark(owners, exclude) {
   if (!other.length) return { used: false, suffix: "", title: "" };
   return {
     used: true,
-    suffix: "  · in Verwendung",
-    title: `Bereits verwendet von: ${other.join(", ")}`,
+    suffix: t("led.in_use"),
+    title: t("led.in_use_by", { ids: other.join(", ") }),
   };
 }
 
@@ -574,12 +574,23 @@ function fillLedNameEditor() {
   fillLedNameText();
 }
 
+function formatOutputLabel(out) {
+  const n = (out.id ?? 0) + 1;
+  const extras = [];
+  if (out.pin != null && out.pin !== "") extras.push(t("output.gpio", { pin: out.pin }));
+  extras.push(t("output.leds", { n: out.len ?? 0 }));
+  const start = out.start ?? 0;
+  const end = start + (out.len ?? 0) - 1;
+  extras.push(t("output.index", { start, end }));
+  return `${t("output.name", { n })} (${extras.join(", ")})`;
+}
+
 function fillOutputSelect(outId, ctrlName) {
   const el = document.getElementById(outId);
   const outs = outputsOf(ctrlName);
   fillOptions(
     el,
-    outs.map((out) => ({ value: out.id, label: out.label })),
+    outs.map((out) => ({ value: out.id, label: formatOutputLabel(out) })),
     el && el.value
   );
 }
@@ -603,8 +614,8 @@ function fillLedSelect(ledId, ctrlName, outId, anteilId, insert, remove) {
   const count = Math.max(0, end - start);
   if (!out || !count) {
     el.innerHTML = insert
-      ? '<option value="-1">am Anfang (vor LED 1)</option>'
-      : '<option value="">Keine LEDs</option>';
+      ? `<option value="-1">${esc(t("led.at_start"))}</option>`
+      : `<option value="">${esc(t("led.none"))}</option>`;
     showChosenLeds(el);
     return;
   }
@@ -615,11 +626,11 @@ function fillLedSelect(ledId, ctrlName, outId, anteilId, insert, remove) {
     const mark = usedMark(ledOwnersForAnteil(ctrlName, global, anteil), exclude);
     const cls = mark.used ? ' class="opt-used"' : "";
     const title = mark.title ? ` title="${esc(mark.title)}"` : "";
-    const beyond = i >= wledLen ? " · nur Konfiguration" : "";
+    const beyond = i >= wledLen ? t("led.config_only") : "";
     const label = `LED ${i + 1} (${esc(ledParen(ctrlName, global))})${mark.suffix}${beyond}`;
     return `<option value="${i}"${cls}${title}>${label}</option>`;
   });
-  if (insert) options.unshift('<option value="-1">am Anfang (vor LED 1)</option>');
+  if (insert) options.unshift(`<option value="-1">${esc(t("led.at_start"))}</option>`);
   el.innerHTML = options.join("");
   if (el.multiple) {
     [...el.options].forEach((opt) => {
@@ -660,7 +671,7 @@ function fillCtrlSelects() {
     if (!el) continue;
     const current = el.value;
     if (!names.length) {
-      el.innerHTML = '<option value="">Kein Controller übernommen</option>';
+      el.innerHTML = `<option value="">${esc(t("ctrl.empty_option"))}</option>`;
       continue;
     }
     el.innerHTML = names.map((n) => `<option value="${n}">${n}</option>`).join("");
@@ -876,9 +887,9 @@ function renderStatus() {
       const ip = c.ip
         ? `<a href="${href}" target="_blank" rel="noopener">${c.ip}</a>`
         : t("ctrl.no_ip");
-      const outs = (c.outputs || []).map((o) => o.label).join(" · ");
+      const outs = (c.outputs || []).map((o) => formatOutputLabel(o)).join(" · ");
       const warns = (c.warnings || [])
-        .map((w) => `<li>${esc(w)}</li>`)
+        .map((w) => `<li>${esc(t(w))}</li>`)
         .join("");
       return `<div><strong>${c.name}</strong> ${ip} · ${c.leds || "?"} LEDs ·
       <span class="${c.reachable ? "ok" : "bad"}">${c.reachable ? t("ctrl.reachable") : t("ctrl.unreachable")}</span>
@@ -1375,7 +1386,7 @@ function showChosenLeds(el) {
     el.insertAdjacentElement("afterend", hint);
   }
   const labels = [...el.selectedOptions]
-    .map((opt) => opt.textContent.replace(/\s+· in Verwendung.*$/, "").trim())
+    .map((opt) => opt.textContent.replace(/\s+·\s.*$/, "").trim())
     .filter(Boolean);
   hint.textContent = labels.length ? t("led.chosen", { labels: labels.join(", ") }) : "";
 }
@@ -1766,7 +1777,7 @@ function fillVehicleModeChannels(selected) {
     : new Set([...el.selectedOptions].map((opt) => opt.value));
   const names = parseKanaelLines($("#v-kanaele") && $("#v-kanaele").value).map((ch) => ch.name);
   if (!names.length) {
-    el.innerHTML = '<option value="">Keine Kanäle übernommen</option>';
+    el.innerHTML = `<option value="">${esc(t("veh.channels_empty"))}</option>`;
     el.disabled = true;
     return;
   }
@@ -1878,8 +1889,8 @@ async function afterSave(kind) {
 }
 
 async function deleteListedObject(id) {
-  if (!window.confirm(`„${id}“ wirklich löschen?`)) return;
-  await runAction("Objekt gelöscht", async () => {
+  if (!window.confirm(t("confirm.delete_object", { id }))) return;
+  await runAction(t("ok.deleted"), async () => {
     const next = await api("/api/config");
     if (!removeObjectFromConfig(next, id)) throw new Error(t("err.object_missing"));
     await api("/api/config", { method: "PUT", body: JSON.stringify(next) });

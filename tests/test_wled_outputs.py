@@ -160,9 +160,9 @@ def test_warnings_from_cfg_sync():
             }
         }
     )
-    assert any("Sync-Empfang" in w for w in warns)
-    assert any("Sync-Senden" in w for w in warns)
-    assert any("E1.31" in w for w in warns)
+    assert "warn.udp_recv" in warns
+    assert "warn.udp_send" in warns
+    assert "warn.dmx" in warns
 
 
 def test_state_body_effect_overlay():
