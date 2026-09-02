@@ -53,7 +53,7 @@ class Engine:
         for obj_id in config.all_object_ids():
             self.states.setdefault(obj_id, ObjectState())
         for vehicle_id in list(self._vehicle_aspects):
-            if vehicle_id not in config.fahrzeuge:
+            if vehicle_id not in config.vehicles:
                 self._vehicle_aspects.pop(vehicle_id, None)
         try:
             asyncio.get_running_loop()
@@ -65,7 +65,7 @@ class Engine:
         return self.states.setdefault(object_id, ObjectState())
 
     async def switch(self, object_id: str, aspect: int, *, source: str = "local") -> None:
-        log.info("Schaltbefehl %s → %s (von %s)", object_id, aspect, source)
+        log.info("Switch %s → %s (from %s)", object_id, aspect, source)
         await self._cancel(object_id)
         task = asyncio.create_task(self._run_switch(object_id, aspect), name=f"switch:{object_id}")
         self._tasks[object_id] = task
@@ -83,24 +83,24 @@ class Engine:
         st.error = None
         await self._emit(object_id, aspect, True)
         try:
-            if object_id in self.config.lampen:
+            if object_id in self.config.lamps:
                 await self._switch_lamp(object_id, aspect)
-            elif object_id in self.config.haeuser:
+            elif object_id in self.config.houses:
                 await self._switch_house(object_id, aspect)
-            elif object_id in self.config.gruppen:
+            elif object_id in self.config.groups:
                 await self._switch_group(object_id, aspect)
-            elif object_id in self.config.sequenzen:
+            elif object_id in self.config.sequences:
                 await self._switch_sequence(object_id, aspect)
-            elif object_id in self.config.signale:
+            elif object_id in self.config.signals:
                 await self._switch_signal(object_id, aspect)
-            elif object_id in self.config.spezial:
+            elif object_id in self.config.special:
                 await self._switch_special(object_id, aspect)
-            elif object_id in self.config.fahrzeuge:
+            elif object_id in self.config.vehicles:
                 await self._switch_vehicle(object_id, aspect)
             elif "." in object_id:
                 await self._switch_window(object_id, aspect)
             else:
-                raise KeyError(f"Unbekanntes Objekt: {object_id}")
+                raise KeyError(f"Unknown object: {object_id}")
             st.aspect = aspect
             st.pending_aspect = None
             st.in_progress = False
@@ -113,89 +113,89 @@ class Engine:
             st.in_progress = False
             st.pending_aspect = None
             st.error = str(exc)
-            log.exception("Schalten von %s fehlgeschlagen", object_id)
+            log.exception("Switching %s failed", object_id)
             await self._emit(object_id, aspect, False)
             raise
 
     async def identify_led(self, controller: str, index: int, output: int = 0) -> None:
         device = self.pool.get(controller)
         if device is None:
-            raise KeyError(f"Controller {controller} nicht gebunden")
+            raise KeyError(f"Controller {controller} is not bound")
         await device.blink(device.global_index(output, index))
 
     async def _switch_lamp(self, lamp_id: str, aspect: int) -> None:
-        lamp = self.config.lampen[lamp_id]
-        color = rgb_from_hex(lamp.farbe, lamp.helligkeit) if aspect else None
-        await self._apply_channels(lamp.controller, [(lamp.leds, lamp.anteil, color)])
+        lamp = self.config.lamps[lamp_id]
+        color = rgb_from_hex(lamp.color, lamp.brightness) if aspect else None
+        await self._apply_channels(lamp.controller, [(lamp.leds, lamp.channel, color)])
         self.state_of(lamp_id).aspect = 1 if aspect else 0
 
     async def _switch_window(self, object_id: str, aspect: int) -> None:
         house_id, window_id = object_id.split(".", 1)
-        house = self.config.haeuser[house_id]
-        window = house.fenster[window_id]
-        color = rgb_from_hex(window.farbe, window.helligkeit) if aspect else None
-        await self._apply_channels(house.controller, [(window.leds, window.anteil, color)])
+        house = self.config.houses[house_id]
+        window = house.windows[window_id]
+        color = rgb_from_hex(window.color, window.brightness) if aspect else None
+        await self._apply_channels(house.controller, [(window.leds, window.channel, color)])
         self.state_of(object_id).aspect = 1 if aspect else 0
 
     async def _switch_house(self, house_id: str, aspect: int) -> None:
-        house = self.config.haeuser[house_id]
-        windows = list(house.fenster.items())
+        house = self.config.houses[house_id]
+        windows = list(house.windows.items())
         if aspect:
             chosen = []
             for window_id, window in windows:
-                if random.random() <= house.nacht_wahrscheinlichkeit:
+                if random.random() <= house.night_probability:
                     chosen.append((window_id, window))
             if not chosen and windows:
                 chosen = [random.choice(windows)]
-            if house.einschalten == "zufaellig":
+            if house.turn_on == "random":
                 random.shuffle(chosen)
             delay = house.delay_range
             first = True
             for window_id, window in chosen:
-                if not first and house.einschalten != "sofort":
+                if not first and house.turn_on != "immediate":
                     await asyncio.sleep(random.uniform(*delay) if delay[1] else 0)
                 first = False
-                color = rgb_from_hex(window.farbe, window.helligkeit)
-                await self._apply_channels(house.controller, [(window.leds, window.anteil, color)])
+                color = rgb_from_hex(window.color, window.brightness)
+                await self._apply_channels(house.controller, [(window.leds, window.channel, color)])
                 self.state_of(f"{house_id}.{window_id}").aspect = 1
             off_windows = [item for item in windows if item not in chosen]
             if off_windows:
                 await self._apply_channels(
                     house.controller,
-                    [(window.leds, window.anteil, None) for _, window in off_windows],
+                    [(window.leds, window.channel, None) for _, window in off_windows],
                 )
                 for window_id, _window in off_windows:
                     self.state_of(f"{house_id}.{window_id}").aspect = 0
         else:
             order = list(reversed(windows))
-            if house.einschalten == "zufaellig":
+            if house.turn_on == "random":
                 random.shuffle(order)
             delay = house.delay_range
             first = True
             for window_id, window in order:
-                if not first and house.einschalten != "sofort":
+                if not first and house.turn_on != "immediate":
                     await asyncio.sleep(random.uniform(*delay) if delay[1] else 0)
                 first = False
-                await self._apply_channels(house.controller, [(window.leds, window.anteil, None)])
+                await self._apply_channels(house.controller, [(window.leds, window.channel, None)])
                 self.state_of(f"{house_id}.{window_id}").aspect = 0
 
     async def _switch_group(self, group_id: str, aspect: int) -> None:
-        group = self.config.gruppen[group_id]
-        for member in group.mitglieder:
+        group = self.config.groups[group_id]
+        for member in group.members:
             await self.switch(member, aspect, source=f"group:{group_id}")
 
     async def _switch_sequence(self, seq_id: str, aspect: int) -> None:
-        seq = self.config.sequenzen[seq_id]
+        seq = self.config.sequences[seq_id]
         members: list[str] = []
-        for group_id in seq.gruppen:
-            members.extend(self.config.gruppen[group_id].mitglieder)
-        if isinstance(seq.reihenfolge, list):
-            ordered = [item for item in seq.reihenfolge if item in members]
+        for group_id in seq.groups:
+            members.extend(self.config.groups[group_id].members)
+        if isinstance(seq.order, list):
+            ordered = [item for item in seq.order if item in members]
             for item in members:
                 if item not in ordered:
                     ordered.append(item)
             members = ordered
-        elif seq.reihenfolge == "zufaellig":
+        elif seq.order == "random":
             random.shuffle(members)
         if not aspect:
             members = list(reversed(members))
@@ -208,49 +208,49 @@ class Engine:
             await self.switch(member, 1 if aspect else 0, source=f"seq:{seq_id}")
 
     async def _switch_signal(self, signal_id: str, aspect: int) -> None:
-        signal = self.config.signale[signal_id]
-        begriff = signal.begriffe.get(aspect)
-        if begriff is None:
-            raise ValueError(f"Signal {signal_id}: Aspekt {aspect} unbekannt")
+        signal = self.config.signals[signal_id]
+        aspect_cfg = signal.aspects.get(aspect)
+        if aspect_cfg is None:
+            raise ValueError(f"Signal {signal_id}: aspect {aspect} unknown")
         assignments: list[tuple[list[int], str, tuple[int, int, int] | None]] = []
-        for other in signal.begriffe.values():
+        for other in signal.aspects.values():
             for idx in other.leds:
-                assignments.append(([idx], other.anteil_of(idx), None))
-        for idx, color in begriff.leds.items():
-            assignments.append(([idx], begriff.anteil_of(idx), rgb_from_hex(color, 255)))
+                assignments.append(([idx], other.channel_of(idx), None))
+        for idx, color in aspect_cfg.leds.items():
+            assignments.append(([idx], aspect_cfg.channel_of(idx), rgb_from_hex(color, 255)))
         await self._apply_channels(signal.controller, assignments)
 
     async def _switch_special(self, object_id: str, aspect: int) -> None:
-        spec = self.config.spezial[object_id]
+        spec = self.config.special[object_id]
         device = self.pool.get(spec.controller)
         if device is None:
-            raise KeyError(f"Controller {spec.controller} nicht verbunden")
+            raise KeyError(f"Controller {spec.controller} is not connected")
         if aspect:
-            bri = spec.helligkeit if spec.helligkeit is not None else 255
+            bri = spec.brightness if spec.brightness is not None else 255
             await device.apply_effect(
                 ActiveEffect(
                     object_id=object_id,
                     leds=tuple(spec.leds),
-                    fx=spec.effekt,
+                    fx=spec.effect,
                     pal=spec.palette,
-                    sx=spec.geschwindigkeit,
-                    ix=spec.intensitaet,
-                    color=rgb_from_hex(spec.farbe, bri),
+                    sx=spec.speed,
+                    ix=spec.intensity,
+                    color=rgb_from_hex(spec.color, bri),
                     bri=bri,
                 )
             )
         else:
             await device.clear_effect(object_id)
-            await self._apply_channels(spec.controller, [(spec.leds, spec.anteil, None)], force=True)
+            await self._apply_channels(spec.controller, [(spec.leds, spec.channel, None)], force=True)
         self.state_of(object_id).aspect = 1 if aspect else 0
 
     async def _switch_vehicle(self, vehicle_id: str, aspect: int) -> None:
-        vehicle = self.config.fahrzeuge[vehicle_id]
-        modi = vehicle.resolved_modi()
-        if aspect not in modi and aspect:
-            raise ValueError(f"Fahrzeug {vehicle_id}: Modus {aspect} unbekannt")
-        mode = modi.get(aspect)
-        if mode is None or not mode.kanaele:
+        vehicle = self.config.vehicles[vehicle_id]
+        modes = vehicle.resolved_modes()
+        if aspect not in modes and aspect:
+            raise ValueError(f"Vehicle {vehicle_id}: mode {aspect} unknown")
+        mode = modes.get(aspect)
+        if mode is None or not mode.channels:
             self._vehicle_aspects.pop(vehicle_id, None)
         else:
             self._vehicle_aspects[vehicle_id] = aspect
@@ -266,7 +266,7 @@ class Engine:
 
     def _vehicle_needs_ticker(self) -> bool:
         for vehicle_id, aspect in self._vehicle_aspects.items():
-            vehicle = self.config.fahrzeuge.get(vehicle_id)
+            vehicle = self.config.vehicles.get(vehicle_id)
             if vehicle and vehicle_has_animation(vehicle, aspect):
                 return True
         return False
@@ -280,7 +280,7 @@ class Engine:
                 except asyncio.CancelledError:
                     raise
                 except Exception:
-                    log.exception("Fahrzeug-Animation")
+                    log.exception("Vehicle animation")
         finally:
             self._vehicle_task = None
 
@@ -291,7 +291,7 @@ class Engine:
         now = self.now()
         by_controller: dict[str, list[str]] = {}
         for vehicle_id in ids:
-            vehicle = self.config.fahrzeuge.get(vehicle_id)
+            vehicle = self.config.vehicles.get(vehicle_id)
             if vehicle is None:
                 continue
             by_controller.setdefault(vehicle.controller, []).append(vehicle_id)
@@ -299,12 +299,12 @@ class Engine:
             device = self.pool.get(controller)
             if device is None:
                 if force_ids:
-                    raise KeyError(f"Controller {controller} nicht verbunden")
+                    raise KeyError(f"Controller {controller} is not connected")
                 continue
             working = list(device.pixels)
             touched: set[int] = set()
             for vehicle_id in sorted(vehicle_ids):
-                vehicle = self.config.fahrzeuge[vehicle_id]
+                vehicle = self.config.vehicles[vehicle_id]
                 aspect = self._vehicle_aspects.get(vehicle_id, 0)
                 touched |= apply_vehicle_to_pixels(working, vehicle, vehicle_id, aspect, now)
             updates: dict[int, tuple[int, int, int]] = {}
@@ -326,7 +326,7 @@ class Engine:
         """Setzt oder löscht RGB-Anteile, ohne andere Kanäle desselben Pixels zu überschreiben."""
         device = self.pool.get(controller)
         if device is None:
-            raise KeyError(f"Controller {controller} nicht verbunden")
+            raise KeyError(f"Controller {controller} is not connected")
         working = list(device.pixels)
         touched: set[int] = set()
         for leds, anteil, color in assignments:
@@ -349,7 +349,7 @@ class Engine:
     async def _set_leds(self, controller: str, updates: dict[int, tuple[int, int, int]]) -> None:
         device = self.pool.get(controller)
         if device is None:
-            raise KeyError(f"Controller {controller} nicht verbunden")
+            raise KeyError(f"Controller {controller} is not connected")
         await device.apply_pixels(updates)
 
     async def _emit(self, object_id: str, aspect: int, in_progress: bool) -> None:

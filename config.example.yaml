@@ -1,15 +1,15 @@
 adapter:
   netbidib:
-    aktiv: true
-    modus: server
+    enabled: true
+    mode: server
     port: 62875
-    knotenname: BiDiB2WLED
+    node_name: BiDiB2WLED
   client:
-    aktiv: false
+    enabled: false
 
-erkennung:
+discovery:
   mdns: true
-  intervall: 30s
+  interval: 30s
   timeout: 90s
 
 web:
@@ -17,10 +17,10 @@ web:
   port: 8080
 
 controller: []
-lampen: {}
-haeuser: {}
-gruppen: {}
-sequenzen: {}
-signale: {}
-spezial: {}
-fahrzeuge: {}
+lamps: {}
+houses: {}
+groups: {}
+sequences: {}
+signals: {}
+special: {}
+vehicles: {}

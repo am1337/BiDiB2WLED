@@ -81,12 +81,12 @@ fahrzeuge:
     cfg = load_config(path)
     assert cfg.lampen["laterne-1"].farbe == "FFB060"
     assert "haus-a.wz" in cfg.all_object_ids()
-    assert cfg.object_kind("laterne-1") == "lampe"
-    assert cfg.object_kind("haus-a") == "haus"
-    assert cfg.object_kind("haus-a.wz") == "fenster"
+    assert cfg.object_kind("laterne-1") == "lamp"
+    assert cfg.object_kind("haus-a") == "house"
+    assert cfg.object_kind("haus-a.wz") == "window"
     assert cfg.object_kind("sig") == "signal"
-    assert cfg.object_kind("kamin") == "spezial"
-    assert cfg.object_kind("pkw-rot") == "fahrzeug"
+    assert cfg.object_kind("kamin") == "special"
+    assert cfg.object_kind("pkw-rot") == "vehicle"
     assert cfg.aspect_count("sig") == 2
     assert cfg.aspect_count("pkw-rot") == 3
     assert "kamin" in cfg.switchable_object_ids()
@@ -149,18 +149,18 @@ def test_set_accessory_swaps():
 def test_host_setup_info_rocrail_uses_plus_one():
     from bidib2wled.config import host_setup_info
 
-    lamp = host_setup_info("lampe", 0)
+    lamp = host_setup_info("lamp", 0)
     assert lamp[0]["program"] == "Rocrail"
-    assert "Adresse 1 (Adresse+1)" in lamp[0]["text"]
+    assert "address 1 (address+1)" in lamp[0]["text"]
     signal = host_setup_info("signal", 2)
     assert signal[0]["text"].startswith("Signal:")
-    assert "Adresse 3 (Adresse+1)" in signal[0]["text"]
-    window = host_setup_info("fenster", None)
-    assert "Haus" in window[0]["text"]
-    vehicle = host_setup_info("fahrzeug", 4)
+    assert "address 3 (address+1)" in signal[0]["text"]
+    window = host_setup_info("window", None)
+    assert "house" in window[0]["text"].lower()
+    vehicle = host_setup_info("vehicle", 4)
     assert vehicle[0]["text"].startswith("Signal:")
-    assert "Modi" in vehicle[0]["text"]
-    assert "Adresse 5 (Adresse+1)" in vehicle[0]["text"]
+    assert "modes" in vehicle[0]["text"].lower()
+    assert "address 5 (address+1)" in vehicle[0]["text"]
 
 
 def test_adapter_client_replaces_rocrail():
@@ -182,7 +182,7 @@ def test_unknown_controller_rejected():
     try:
         AppConfig.model_validate({"lampen": {"x": {"controller": "nein", "leds": [0]}}})
     except Exception as exc:
-        assert "unbekannter Controller" in str(exc)
+        assert "unknown controller" in str(exc)
     else:
         raise AssertionError("sollte fehlschlagen")
 
@@ -207,14 +207,14 @@ def test_vehicle_anteil_and_default_modi():
     )
     vehicle = cfg.fahrzeuge["lf"]
     assert vehicle.kanaele["licht"].anteil == "r"
-    assert vehicle.kanaele["licht"].art == "dauer"
+    assert vehicle.kanaele["licht"].art == "continuous"
     assert vehicle.kanaele["blinker"].art == "blinker"
     assert vehicle.kanaele["rundum"].anteil == "rgb"
     modi = vehicle.resolved_modi()
-    assert modi[0].name == "Aus"
-    assert modi[1].name == "Licht"
-    assert modi[2].name == "Warnblinker"
-    assert modi[3].name == "Einsatz"
+    assert modi[0].name == "Off"
+    assert modi[1].name == "Lights"
+    assert modi[2].name == "Hazards"
+    assert modi[3].name == "Emergency"
     assert "rundum" in modi[3].kanaele
     assert default_vehicle_modi(vehicle.kanaele)[2].kanaele == ["licht", "blinker"]
 
@@ -239,12 +239,14 @@ def test_vehicle_rundum_schritte_aliases_and_yaml_omit_auto(tmp_path: Path):
             },
         }
     )
-    assert cfg.fahrzeuge["fw"].kanaele["klein"].schritte == "kanaele"
+    assert cfg.fahrzeuge["fw"].kanaele["klein"].schritte == "channels"
     assert cfg.fahrzeuge["fw"].kanaele["balken"].schritte == "auto"
     save_config(tmp_path / "c.yaml", cfg)
     text = (tmp_path / "c.yaml").read_text(encoding="utf-8")
-    assert "schritte: kanaele" in text
-    assert "schritte: auto" not in text
+    assert "steps: channels" in text
+    assert "steps: auto" not in text
+    assert "schritte:" not in text
+    assert "kanaele:" not in text
 
 
 def test_vehicle_unknown_mode_channel_rejected():
@@ -257,7 +259,7 @@ def test_vehicle_unknown_mode_channel_rejected():
             }
         )
     except Exception as exc:
-        assert "unbekannter Kanal" in str(exc)
+        assert "unknown channel" in str(exc)
     else:
         raise AssertionError("sollte fehlschlagen")
 
@@ -420,7 +422,7 @@ def test_delete_leds_rejected_when_object_would_be_empty():
             "lampen": {"l6": {"controller": "c", "leds": [5]}},
         }
     )
-    with pytest.raises(ValueError, match="keine LED mehr"):
+    with pytest.raises(ValueError, match="no LED left"):
         cfg.delete_controller_leds("c", first_removed=5, count=3)
     assert cfg.lampen["l6"].leds == [5]
 
@@ -449,9 +451,9 @@ def test_empty_signal_anteile_omitted_from_dump():
             },
         }
     )
-    dumped = cfg.model_dump(by_alias=True, exclude_none=True)
-    begriff = dumped["signale"]["s1"]["begriffe"][0]
-    assert begriff.get("anteile") in (None, {})
+    dumped = cfg.model_dump(by_alias=False, exclude_none=True)
+    aspect = dumped["signals"]["s1"]["aspects"][0]
+    assert aspect.get("channels") in (None, {})
 
 
 def test_yaml_null_anteile_loads_signal_with_space_in_id(tmp_path: Path):
@@ -489,6 +491,8 @@ signale:
     save_config(path, cfg)
     text = path.read_text(encoding="utf-8")
     assert "anteile:" not in text
+    assert "signale:" not in text
+    assert "signals:" in text
     again = load_config(path)
     assert again.signale["signal 2"].begriffe[0].leds[12] == "FF0000"
 
@@ -506,18 +510,18 @@ def test_config_roundtrip_allows_null_signal_anteile_when_saving_special():
             },
         }
     )
-    dumped = json.loads(json.dumps(cfg.model_dump(by_alias=True)))
-    dumped["signale"]["sig"]["begriffe"]["0"]["anteile"] = None
-    dumped["spezial"] = {
+    dumped = json.loads(json.dumps(cfg.model_dump(by_alias=False)))
+    dumped["signals"]["sig"]["aspects"]["0"]["channels"] = None
+    dumped["special"] = {
         "kamin": {
             "controller": "dorf",
             "leds": [8],
-            "effekt": 10,
+            "effect": 10,
             "palette": 0,
-            "geschwindigkeit": 128,
-            "intensitaet": 180,
-            "farbe": "FF6A00",
-            "anteil": "rgb",
+            "speed": 128,
+            "intensity": 180,
+            "color": "FF6A00",
+            "channel": "rgb",
         }
     }
     again = AppConfig.model_validate(dumped)
@@ -554,12 +558,12 @@ def test_signal_same_led_two_color_channels_roundtrip():
     assert halt.anteile[5] == "r"
     assert fahrt.leds[5] == "00FF00"
     assert fahrt.anteile[5] == "g"
-    dumped = cfg.model_dump(by_alias=True, exclude_none=True)
-    begriffe = dumped["signale"]["s1"]["begriffe"]
-    assert begriffe[0]["leds"][5] == "FF0000"
-    assert begriffe[0]["anteile"][5] == "r"
-    assert begriffe[1]["leds"][5] == "00FF00"
-    assert begriffe[1]["anteile"][5] == "g"
+    dumped = cfg.model_dump(by_alias=False, exclude_none=True)
+    aspects = dumped["signals"]["s1"]["aspects"]
+    assert aspects[0]["leds"][5] == "FF0000"
+    assert aspects[0]["channels"][5] == "r"
+    assert aspects[1]["leds"][5] == "00FF00"
+    assert aspects[1]["channels"][5] == "g"
     again = AppConfig.model_validate(dumped)
     assert again.signale["s1"].begriffe[0].anteil_of(5) == "r"
     assert again.signale["s1"].begriffe[1].anteil_of(5) == "g"
@@ -647,5 +651,85 @@ def test_led_names_move_with_insert_and_delete():
     assert (0, 0, "Laterne") in names
     assert (4, 7, "Haus3") in names
     assert all(item.name != "Halt" for item in cfg.controller[0].namen)
+
+
+def test_language_files_cover_the_same_keys():
+    from bidib2wled.web import STATIC_DIR
+
+    en = json.loads((STATIC_DIR / "i18n" / "en.json").read_text(encoding="utf-8"))
+    de = json.loads((STATIC_DIR / "i18n" / "de.json").read_text(encoding="utf-8"))
+    assert set(en) == set(de)
+    assert en and de
+
+
+def test_legacy_german_yaml_saves_english_keys(tmp_path: Path):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        """
+adapter:
+  netbidib:
+    aktiv: true
+    modus: server
+    knotenname: Test
+controller:
+  - name: dorf
+    ip: 127.0.0.1
+    leds: 20
+    namen:
+      - { led: 0, name: Straßenlaterne }
+lampen:
+  laterne-1: { controller: dorf, leds: [0], farbe: "FFB060", anteil: rgb }
+haeuser:
+  haus-a:
+    controller: dorf
+    einschalten: nacheinander
+    fenster:
+      wz: { leds: [2], farbe: "FFFFFF" }
+fahrzeuge:
+  pkw:
+    controller: dorf
+    kanaele:
+      licht: { leds: [4], art: dauer }
+      rundum: { leds: [5], art: rundum, schritte: kanaele }
+""",
+        encoding="utf-8",
+    )
+    cfg = load_config(path)
+    assert cfg.lamps["laterne-1"].color == "FFB060"
+    assert cfg.houses["haus-a"].turn_on == "sequential"
+    assert cfg.vehicles["pkw"].channels["licht"].type == "continuous"
+    assert cfg.vehicles["pkw"].channels["rundum"].steps == "channels"
+    save_config(path, cfg)
+    text = path.read_text(encoding="utf-8")
+    for german in (
+        "lampen:",
+        "haeuser:",
+        "fahrzeuge:",
+        "kanaele:",
+        "einschalten:",
+        "fenster:",
+        "aktiv:",
+        "knotenname:",
+        "namen:",
+        "farbe:",
+        "anteil:",
+        "schritte:",
+        "nacheinander",
+        "dauer",
+    ):
+        assert german not in text, german
+    assert "lamps:" in text
+    assert "houses:" in text
+    assert "vehicles:" in text
+    assert "channels:" in text
+    assert "turn_on: sequential" in text
+    assert "type: continuous" in text
+    assert "type: beacon" in text
+    assert "steps: channels" in text
+    assert "enabled: true" in text
+    assert "node_name: Test" in text
+    assert "names:" in text
+    assert "color: FFB060" in text
+    assert "Straßenlaterne" in text
 
 

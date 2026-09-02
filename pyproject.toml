@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "bidib2wled"
 version = "0.1.0"
-description = "BiDiB-Knoten zur Steuerung von WLED-Beleuchtung auf der Modellbahn"
+description = "BiDiB node that drives WLED lighting on a model railway"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

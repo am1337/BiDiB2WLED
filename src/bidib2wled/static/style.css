@@ -27,7 +27,7 @@ nav button.active, button:not(.secondary):hover { border-color: var(--accent); c
 button.secondary { color: var(--muted); }
 .hidden { display: none !important; }
 #v-schritte-wrap { display: none !important; }
-.row:has(#v-art option[value="rundum"]:checked) #v-schritte-wrap {
+.row:has(#v-art option[value="beacon"]:checked) #v-schritte-wrap {
   display: block !important;
 }
 article {

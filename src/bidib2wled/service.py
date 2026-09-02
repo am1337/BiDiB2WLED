@@ -25,7 +25,7 @@ class Service:
         self.config = load_config(config_path)
         self.pool = WledPool(simulate=simulate)
         self.engine = Engine(self.pool)
-        self.discovery = WledDiscovery(self.pool, enabled=self.config.erkennung.mdns)
+        self.discovery = WledDiscovery(self.pool, enabled=self.config.discovery.mdns)
         self.bidib = NetBidibAdapter(self.engine, config_path, save_cb=self._save)
         self._aiozc: AsyncZeroconf | None = None
         self._bind_task: asyncio.Task | None = None
@@ -54,7 +54,7 @@ class Service:
                         "start": 0,
                         "len": total,
                         "pin": None,
-                        "label": f"Ausgang 1 ({total} LEDs)",
+                        "label": f"Output 1 ({total} LEDs)",
                     }
                 ]
             bound.append(
@@ -75,14 +75,14 @@ class Service:
                 }
             )
         kind_labels = {
-            "lampe": "Lampe",
-            "haus": "Haus",
-            "fenster": "Fenster",
-            "gruppe": "Gruppe",
-            "sequenz": "Sequenz",
+            "lamp": "Lamp",
+            "house": "House",
+            "window": "Window",
+            "group": "Group",
+            "sequence": "Sequence",
             "signal": "Signal",
-            "spezial": "Spezial",
-            "fahrzeug": "Fahrzeug",
+            "special": "Special",
+            "vehicle": "Vehicle",
         }
         acc_map = self.bidib.accessory_map()
         acc_rev = {obj: anum for anum, obj in acc_map.items()}
@@ -106,12 +106,12 @@ class Service:
                 "info": host_setup_info(kind, anum),
             }
             if kind == "signal":
-                begriffe = self.config.signale[obj_id].begriffe
-                item["states"] = [{"value": key, "name": val.name} for key, val in sorted(begriffe.items())]
+                aspects = self.config.signals[obj_id].aspects
+                item["states"] = [{"value": key, "name": val.name} for key, val in sorted(aspects.items())]
                 item["on"] = None
-            elif kind == "fahrzeug":
-                modi = self.config.fahrzeuge[obj_id].resolved_modi()
-                item["states"] = [{"value": key, "name": val.name} for key, val in sorted(modi.items())]
+            elif kind == "vehicle":
+                modes = self.config.vehicles[obj_id].resolved_modes()
+                item["states"] = [{"value": key, "name": val.name} for key, val in sorted(modes.items())]
                 item["on"] = None
             objects.append(item)
         pending = None
@@ -137,10 +137,10 @@ class Service:
             "config_path": str(self.config_path),
             "wizard": len(self.config.controller) == 0,
             "bidib": {
-                "aktiv": self.config.adapter.netbidib.aktiv,
-                "modus": self.config.adapter.netbidib.modus,
+                "enabled": self.config.adapter.netbidib.enabled,
+                "mode": self.config.adapter.netbidib.mode,
                 "port": self.config.adapter.netbidib.port,
-                "knotenname": self.config.adapter.netbidib.knotenname,
+                "node_name": self.config.adapter.netbidib.node_name,
                 "unique_id": uid_to_hex(self.bidib.uid),
                 "logged_on": self.bidib.logged_session is not None,
                 "sessions": len(self.bidib.sessions),
@@ -179,13 +179,13 @@ class Service:
         try:
             self._aiozc = AsyncZeroconf()
             await advertise_http(self._aiozc, self.config.web.port)
-            if self.config.adapter.netbidib.aktiv and self.config.adapter.netbidib.modus == "server":
+            if self.config.adapter.netbidib.enabled and self.config.adapter.netbidib.mode == "server":
                 await advertise_bidib_node(
                     self._aiozc,
-                    instance=self.config.adapter.netbidib.knotenname,
+                    instance=self.config.adapter.netbidib.node_name,
                     port=self.config.adapter.netbidib.port,
                     uid_hex=uid_to_hex(self.bidib.uid),
-                    user=self.config.adapter.netbidib.knotenname,
+                    user=self.config.adapter.netbidib.node_name,
                     prod="BiDiB2WLED",
                 )
         except Exception:
@@ -249,7 +249,7 @@ class Service:
 
     async def _rebind_loop(self) -> None:
         while True:
-            await asyncio.sleep(self.config.erkennung.interval_s)
+            await asyncio.sleep(self.config.discovery.interval_s)
             try:
                 await self._bind_all()
             except Exception:
@@ -279,7 +279,7 @@ class Service:
         save_config(self.config_path, config)
         self._mtime = self.config_path.stat().st_mtime
         await self.apply_config(config)
-        return config.model_dump(by_alias=True, exclude_none=True)
+        return config.model_dump(by_alias=False, exclude_none=True)
 
     async def set_object_address(self, object_id: str, address: int) -> dict:
         self.config.set_accessory(object_id, address)
@@ -290,7 +290,7 @@ class Service:
     def _output_info(self, controller: str, output: int) -> tuple[object, int, dict]:
         ctrl = self.config.controller_by_name(controller)
         if ctrl is None:
-            raise ValueError(f"Unbekannter Controller: {controller}")
+            raise ValueError(f"Unknown controller: {controller}")
         device = self.pool.get(controller)
         wled_count = (device.info.led_count if device and device.info.led_count else None) or ctrl.leds or 0
         outputs = [item.to_dict() for item in device.info.outputs] if device and device.info.outputs else []
@@ -298,7 +298,7 @@ class Service:
             outputs = [{"id": 0, "start": 0, "len": wled_count}]
         out = next((item for item in outputs if int(item["id"]) == int(output)), None)
         if out is None:
-            raise ValueError(f"Ausgang {output} existiert nicht")
+            raise ValueError(f"Output {output} does not exist")
         return ctrl, int(wled_count), out
 
     def _led_delta(self, controller: str, wled_count: int) -> dict[str, int]:
@@ -315,7 +315,7 @@ class Service:
         length = int(out["len"] or 0)
         start = int(out["start"] or 0)
         if after < -1 or (length and after >= length):
-            raise ValueError("LED liegt nicht auf diesem Ausgang")
+            raise ValueError("LED is not on this output")
         first_shifted = start + after + 1
         shifted = self.config.shift_controller_leds(controller, first_shifted, count, int(wled_count))
         self._save()
@@ -334,7 +334,7 @@ class Service:
         _ctrl, wled_count, out = self._output_info(controller, output)
         start = int(out["start"] or 0)
         if start_at < 0:
-            raise ValueError("Bitte die erste zu löschende LED wählen")
+            raise ValueError("Please choose the first LED to delete")
         first_removed = start + start_at
         result = self.config.delete_controller_leds(controller, first_removed, count)
         self._save()
@@ -351,15 +351,15 @@ class Service:
 
     async def apply_config(self, config: AppConfig) -> None:
         old_port = self.config.adapter.netbidib.port
-        old_mode = self.config.adapter.netbidib.modus
-        old_aktiv = self.config.adapter.netbidib.aktiv
+        old_mode = self.config.adapter.netbidib.mode
+        old_enabled = self.config.adapter.netbidib.enabled
         self.config = config
         filled = self.config.ensure_accessories()
         self.engine.load(config)
         net_changed = (
             config.adapter.netbidib.port != old_port
-            or config.adapter.netbidib.modus != old_mode
-            or config.adapter.netbidib.aktiv != old_aktiv
+            or config.adapter.netbidib.mode != old_mode
+            or config.adapter.netbidib.enabled != old_enabled
         )
         if net_changed:
             await self.bidib.restart(config)
@@ -380,7 +380,7 @@ class Service:
     ) -> None:
         name = name.strip()
         if not name:
-            raise ValueError("Name darf nicht leer sein")
+            raise ValueError("Name must not be empty")
         existing = self.config.controller_by_name(name)
         mac_n = normalize_mac(mac) if mac else None
         if existing:
