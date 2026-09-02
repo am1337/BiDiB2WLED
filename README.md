@@ -404,7 +404,7 @@ fahrzeuge:
 
 Farben sind `RRGGBB` ohne `#`. LED-Indizes sind global auf dem Controller (Ausgang 1 beginnt bei 0). `anteil` (`r`/`g`/`b`/`rgb`) ist der RGB-Anteil: so werden die drei LEDs eines Pixels unabhängig geschaltet. Spezial-Objekte nutzen die WLED-Effekte des Controllers (`effekt` / `palette` sind die Nummern aus der Weboberfläche); Effekte wirken auf das ganze Pixel.
 
-Unter `controller.namen` liegen Anzeigenamen: `led` (eine LED) oder `von`/`bis` (Bereich, inklusive, 0-basiert), optional `anteil` für eine Farbe derselben LED. Beim Einfügen oder Entfernen im Bus werden die Namen wie die Objekt-Adressen verschoben.
+Unter `controller.namen` liegen Anzeigenamen: `led` (eine LED) oder `von`/`bis` (Bereich, inklusive, 0-basiert), optional `anteil` für eine Farbe derselben LED. In den Listen steht der Name statt `Nr. …`; mehrere Farbnamen einer LED erscheinen mit `/` getrennt. Beim Einfügen oder Entfernen im Bus werden die Namen wie die Objekt-Adressen verschoben.
 
 Fahrzeuge, Rundumlicht: `schritte` steuert, was nacheinander aufleuchtet. In der Oberfläche erscheint die Auswahl nur bei Art **Rundumlicht**.
 
