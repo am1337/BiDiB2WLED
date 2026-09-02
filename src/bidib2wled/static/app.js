@@ -413,37 +413,26 @@ function smallestLedName(items) {
   })[0];
 }
 
-function ledNameFor(ctrlName, index, anteil) {
+function ledNameFor(ctrlName, index, _anteil) {
   const covering = controllerNames(ctrlName).filter((item) => {
     const von = nameVon(item);
     const bis = nameBis(item);
     return Number.isFinite(von) && Number.isFinite(bis) && von <= index && index <= bis;
   });
   if (!covering.length) return "";
-  const want = parseAnteil(anteil);
-  if (want === "r" || want === "g" || want === "b") {
-    const exact = covering.filter((item) => parseAnteil(item.anteil) === want);
-    if (exact.length) return smallestLedName(exact).name;
+  const parts = [];
+  for (const component of ["r", "g", "b"]) {
+    const hits = covering.filter((item) => parseAnteil(item.anteil) === component);
+    if (hits.length) parts.push(smallestLedName(hits).name);
   }
-  const channels = covering.filter((item) => {
-    const a = parseAnteil(item.anteil);
-    return a === "r" || a === "g" || a === "b";
-  });
+  if (parts.length) return parts.join(" / ");
   const rgb = covering.filter((item) => parseAnteil(item.anteil) === "rgb");
-  if (want === "rgb" && channels.length) {
-    const parts = [];
-    for (const component of ["r", "g", "b"]) {
-      const hits = channels.filter((item) => parseAnteil(item.anteil) === component);
-      if (hits.length) parts.push(smallestLedName(hits).name);
-    }
-    if (parts.length) {
-      const extra = rgb.length ? smallestLedName(rgb).name : "";
-      return extra ? `${extra} (${parts.join(" / ")})` : parts.join(" / ");
-    }
-  }
-  if (rgb.length) return smallestLedName(rgb).name;
-  if (channels.length) return smallestLedName(channels).name;
-  return "";
+  return rgb.length ? smallestLedName(rgb).name : "";
+}
+
+function ledParen(ctrlName, index) {
+  const name = ledNameFor(ctrlName, index);
+  return name || `Nr. ${index}`;
 }
 
 function parseLedNameLine(line) {
@@ -564,9 +553,7 @@ function fillLedSelect(ledId, ctrlName, outId, anteilId, insert, remove) {
     const cls = mark.used ? ' class="opt-used"' : "";
     const title = mark.title ? ` title="${esc(mark.title)}"` : "";
     const beyond = i >= wledLen ? " · nur Konfiguration" : "";
-    const name = ledNameFor(ctrlName, global, anteil);
-    const namePart = name ? ` · ${esc(name)}` : "";
-    const label = `LED ${i + 1} (Nr. ${global})${namePart}${mark.suffix}${beyond}`;
+    const label = `LED ${i + 1} (${esc(ledParen(ctrlName, global))})${mark.suffix}${beyond}`;
     return `<option value="${i}"${cls}${title}>${label}</option>`;
   });
   if (insert) options.unshift('<option value="-1">am Anfang (vor LED 1)</option>');
@@ -1153,7 +1140,7 @@ $("#ins-go").onclick = () => runAction("LED-Adressen angepasst", async () => {
   const start = out ? out.start : 0;
   const first = start + after + 1;
   const wled = (controllerByName(controller) && controllerByName(controller).leds) || 0;
-  const where = after < 0 ? "am Anfang" : `nach LED ${after + 1} (Nr. ${start + after})`;
+  const where = after < 0 ? "am Anfang" : `nach LED ${after + 1} (${ledParen(controller, start + after)})`;
   const ok = window.confirm(
     `${count} LED(s) ${where} einfügen.\nAlle Objekt-Adressen ab Nr. ${first} werden um ${count} erhöht.\nWLED hat derzeit ${wled} LEDs.`
   );
@@ -1194,7 +1181,7 @@ $("#del-go").onclick = () => runAction("LED-Adressen angepasst", async () => {
     ? `\nObjekte auf diesen LEDs: ${owners.join(", ")} – deren Adressen auf den entfernten LEDs entfallen.`
     : "";
   const ok = window.confirm(
-    `${count} LED(s) ab LED ${startAt + 1} (Nr. ${first}) entfernen.\n` +
+    `${count} LED(s) ab LED ${startAt + 1} (${ledParen(controller, first)}) entfernen.\n` +
       `Objekt-Adressen ab Nr. ${first + count} werden um ${count} verringert.\n` +
       `WLED: ${wled} LEDs, Konfiguration ${span}. Differenz: ${span - wled}.` +
       ownerLine

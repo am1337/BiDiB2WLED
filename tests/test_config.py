@@ -600,9 +600,10 @@ lampen:
     cfg = load_config(path)
     assert cfg.led_label("dorf", 0) == "Straßenlaterne"
     assert cfg.led_label("dorf", 4) == "Haus3"
-    assert cfg.led_label("dorf", 11, "r") == "Halt"
-    assert cfg.led_label("dorf", 11, "g") == "Fahrt"
+    assert cfg.led_label("dorf", 11, "r") == "Halt / Fahrt"
+    assert cfg.led_label("dorf", 11, "g") == "Halt / Fahrt"
     assert cfg.led_label("dorf", 11, "rgb") == "Halt / Fahrt"
+    assert cfg.led_label("dorf", 11, "b") == "Halt / Fahrt"
     save_config(path, cfg)
     text = path.read_text(encoding="utf-8")
     assert "Straßenlaterne" in text

@@ -552,38 +552,29 @@ class AppConfig(BaseModel):
         return None
 
     def led_label(self, controller: str, index: int, anteil: str = "rgb") -> str:
-        """Anzeigename für eine LED in den Listen, sonst leer."""
+        """Anzeigename für eine LED in den Listen, sonst leer.
+
+        Mehrere Farbnamen (R/G/B) stehen immer mit ' / ' getrennt.
+        """
         ctrl = self.controller_by_name(controller)
         if ctrl is None:
             return ""
         covering = [item for item in ctrl.namen if item.covers(index)]
         if not covering:
             return ""
-        want = parse_anteil(anteil)
 
         def smallest(items: list[LedNameConfig]) -> LedNameConfig:
             return min(items, key=lambda item: (item.bis - item.von, item.name))
 
-        if want in ("r", "g", "b"):
-            exact = [item for item in covering if item.anteil == want]
-            if exact:
-                return smallest(exact).name
-        channels = [item for item in covering if item.anteil in ("r", "g", "b")]
+        parts: list[str] = []
+        for component in ("r", "g", "b"):
+            hits = [item for item in covering if item.anteil == component]
+            if hits:
+                parts.append(smallest(hits).name)
+        if parts:
+            return " / ".join(parts)
         rgb = [item for item in covering if item.anteil == "rgb"]
-        if want == "rgb" and channels:
-            parts: list[str] = []
-            for component in ("r", "g", "b"):
-                hits = [item for item in channels if item.anteil == component]
-                if hits:
-                    parts.append(smallest(hits).name)
-            if parts:
-                extra = smallest(rgb).name if rgb else ""
-                return f"{extra} ({' / '.join(parts)})" if extra else " / ".join(parts)
-        if rgb:
-            return smallest(rgb).name
-        if channels:
-            return smallest(channels).name
-        return ""
+        return smallest(rgb).name if rgb else ""
 
     def switchable_object_ids(self) -> list[str]:
         """Objekte mit eigener BiDiB-Accessory-Nummer (Fenster nur nach Handzuweisung)."""
