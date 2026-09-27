@@ -50,6 +50,13 @@ fi
 [ -n "${BIDIB2WLED_ARGS:-}" ] && CMD+=(${BIDIB2WLED_ARGS})
 CMD+=("$@")
 
+PORT=8080
+for i in "${!CMD[@]}"; do
+    if [ "${CMD[$i]}" = "--port" ]; then
+        PORT="${CMD[$((i + 1))]:-$PORT}"
+    fi
+done
+
 export PYTHONUNBUFFERED=1
 
 if [ "$FOREGROUND" = "1" ]; then
@@ -69,4 +76,4 @@ if ! kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
 fi
 
 echo "BiDiB2WLED started (PID $(cat "$PIDFILE")). Log: $LOGFILE"
-echo "Web UI: http://127.0.0.1:${BIDIB2WLED_PORT:-8080}"
+echo "Web UI: http://127.0.0.1:$PORT"
