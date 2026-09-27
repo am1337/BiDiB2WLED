@@ -93,7 +93,57 @@ python -m build
 
 Artifacts are in `dist/`. Install with `pip install dist/bidib2wled-*.whl`.
 
-## Linux: install as a service
+## Start and stop scripts (Linux / macOS)
+
+`start.sh` and `stop.sh` in the project directory start and stop the bridge without typing the venv path each time.
+
+```bash
+./start.sh          # start in the background
+./stop.sh           # stop
+./start.sh --simulate   # extra arguments are passed through
+```
+
+`start.sh` uses `.venv/bin/bidib2wled` if it exists, otherwise `bidib2wled` from the PATH. It writes the process ID to `bidib2wled.pid` and the output to `bidib2wled.log`; a second start while it is running does nothing. `./start.sh --foreground` runs in the foreground instead (for systemd or a terminal). `stop.sh` sends SIGTERM and after 15 seconds SIGKILL.
+
+Settings via environment variables:
+
+| Variable | Meaning |
+|---|---|
+| `BIDIB2WLED_CONFIG` | YAML file. Default: `config.yaml` in the project directory if present |
+| `BIDIB2WLED_HOST` | Web bind address |
+| `BIDIB2WLED_PORT` | Web port |
+| `BIDIB2WLED_ARGS` | extra arguments, e.g. `"--simulate -v"` |
+| `BIDIB2WLED_PIDFILE` | pid file |
+| `BIDIB2WLED_LOG` | log file |
+
+```bash
+BIDIB2WLED_PORT=8099 BIDIB2WLED_ARGS="--simulate" ./start.sh
+tail -f bidib2wled.log
+```
+
+## Linux: start automatically at boot
+
+With systemd (Debian, Ubuntu, Raspberry Pi OS, Fedora, …) the bridge starts at boot, restarts after a crash and logs to the journal. Two variants – pick one.
+
+### Variant A: project directory with venv (recommended for a Raspberry Pi)
+
+The service runs `start.sh --foreground` under your own user. Nothing is copied; the config stays in the project directory.
+
+```bash
+cd ~/BiDiB2WLED                 # your project directory
+python3 -m venv .venv
+.venv/bin/pip install -e .
+./start.sh --simulate           # short test, then ./stop.sh
+
+sudo cp packaging/bidib2wled-venv.service /etc/systemd/system/bidib2wled.service
+sudo nano /etc/systemd/system/bidib2wled.service   # adjust User, Group, WorkingDirectory, ExecStart
+sudo systemctl daemon-reload
+sudo systemctl enable --now bidib2wled
+```
+
+On a Raspberry Pi with the default user `pi` and the project in `/home/pi/BiDiB2WLED` the delivered file fits as it is. For another user replace `pi` and the paths everywhere.
+
+### Variant B: system-wide installation with its own service user
 
 After `pip install .` (system-wide or in a venv, then adjust `ExecStart`):
 
@@ -108,9 +158,25 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now bidib2wled
 ```
 
-Logs: `journalctl -u bidib2wled -f`
+### Operating the service
 
-Without systemd: tmux/screen or desktop autostart with `bidib2wled --config /path/config.yaml`.
+| Command | Meaning |
+|---|---|
+| `sudo systemctl start bidib2wled` | start now |
+| `sudo systemctl stop bidib2wled` | stop |
+| `sudo systemctl restart bidib2wled` | restart (e.g. after editing the config) |
+| `sudo systemctl status bidib2wled` | is it running? |
+| `sudo systemctl enable bidib2wled` | start at boot |
+| `sudo systemctl disable bidib2wled` | no longer start at boot |
+| `journalctl -u bidib2wled -f` | follow the log live |
+
+While the service is running do **not** start the bridge a second time with `start.sh` – port 8080 and 62875 can only be used once.
+
+### Without systemd
+
+- Cron of the user: `crontab -e`, then `@reboot /home/pi/BiDiB2WLED/start.sh` (log in `bidib2wled.log`).
+- Desktop autostart: `.desktop` file in `~/.config/autostart/` with `Exec=/home/pi/BiDiB2WLED/start.sh`.
+- Manual in a session: tmux/screen with `./start.sh --foreground`.
 
 ## Windows
 
@@ -532,7 +598,57 @@ python -m build
 
 Artefakte liegen in `dist/`. Installation: `pip install dist/bidib2wled-*.whl`
 
-## Linux: Installation als Dienst
+## Start- und Stop-Skript (Linux / macOS)
+
+`start.sh` und `stop.sh` im Projektverzeichnis starten und stoppen die Bridge, ohne jedes Mal den venv-Pfad zu tippen.
+
+```bash
+./start.sh          # im Hintergrund starten
+./stop.sh           # beenden
+./start.sh --simulate   # zusätzliche Argumente werden durchgereicht
+```
+
+`start.sh` nimmt `.venv/bin/bidib2wled`, falls vorhanden, sonst `bidib2wled` aus dem PATH. Die Prozess-ID steht in `bidib2wled.pid`, die Ausgabe in `bidib2wled.log`; ein zweiter Start bei laufendem Dienst passiert nicht. `./start.sh --foreground` läuft stattdessen im Vordergrund (für systemd oder ein Terminal). `stop.sh` schickt SIGTERM und nach 15 Sekunden SIGKILL.
+
+Einstellungen über Umgebungsvariablen:
+
+| Variable | Bedeutung |
+|---|---|
+| `BIDIB2WLED_CONFIG` | YAML-Datei. Standard: `config.yaml` im Projektverzeichnis, falls vorhanden |
+| `BIDIB2WLED_HOST` | Web-Bind-Adresse |
+| `BIDIB2WLED_PORT` | Web-Port |
+| `BIDIB2WLED_ARGS` | zusätzliche Argumente, z. B. `"--simulate -v"` |
+| `BIDIB2WLED_PIDFILE` | PID-Datei |
+| `BIDIB2WLED_LOG` | Logdatei |
+
+```bash
+BIDIB2WLED_PORT=8099 BIDIB2WLED_ARGS="--simulate" ./start.sh
+tail -f bidib2wled.log
+```
+
+## Linux: automatisch beim Booten starten
+
+Mit systemd (Debian, Ubuntu, Raspberry Pi OS, Fedora, …) startet die Bridge beim Booten, startet nach einem Absturz neu und schreibt ins Journal. Zwei Varianten – eine davon auswählen.
+
+### Variante A: Projektverzeichnis mit venv (empfohlen für den Raspberry Pi)
+
+Der Dienst startet `start.sh --foreground` unter deinem eigenen Benutzer. Es wird nichts kopiert, die Konfiguration bleibt im Projektverzeichnis.
+
+```bash
+cd ~/BiDiB2WLED                 # dein Projektverzeichnis
+python3 -m venv .venv
+.venv/bin/pip install -e .
+./start.sh --simulate           # kurzer Test, danach ./stop.sh
+
+sudo cp packaging/bidib2wled-venv.service /etc/systemd/system/bidib2wled.service
+sudo nano /etc/systemd/system/bidib2wled.service   # User, Group, WorkingDirectory, ExecStart anpassen
+sudo systemctl daemon-reload
+sudo systemctl enable --now bidib2wled
+```
+
+Auf einem Raspberry Pi mit dem Standardbenutzer `pi` und dem Projekt in `/home/pi/BiDiB2WLED` passt die mitgelieferte Datei unverändert. Bei einem anderen Benutzer überall `pi` und die Pfade ersetzen.
+
+### Variante B: systemweite Installation mit eigenem Dienstbenutzer
 
 Nach `pip install .` (systemweit oder in einer venv, dann `ExecStart` anpassen):
 
@@ -547,9 +663,25 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now bidib2wled
 ```
 
-Logs: `journalctl -u bidib2wled -f`
+### Dienst bedienen
 
-Ohne systemd: tmux/screen oder Desktop-Autostart mit `bidib2wled --config /pfad/config.yaml`.
+| Befehl | Bedeutung |
+|---|---|
+| `sudo systemctl start bidib2wled` | jetzt starten |
+| `sudo systemctl stop bidib2wled` | beenden |
+| `sudo systemctl restart bidib2wled` | neu starten (z. B. nach Änderung der Konfiguration) |
+| `sudo systemctl status bidib2wled` | läuft er? |
+| `sudo systemctl enable bidib2wled` | beim Booten starten |
+| `sudo systemctl disable bidib2wled` | nicht mehr beim Booten starten |
+| `journalctl -u bidib2wled -f` | Log live mitlesen |
+
+Solange der Dienst läuft, die Bridge **nicht** zusätzlich mit `start.sh` starten – Port 8080 und 62875 gibt es nur einmal.
+
+### Ohne systemd
+
+- Cron des Benutzers: `crontab -e`, dann `@reboot /home/pi/BiDiB2WLED/start.sh` (Log in `bidib2wled.log`).
+- Desktop-Autostart: `.desktop`-Datei in `~/.config/autostart/` mit `Exec=/home/pi/BiDiB2WLED/start.sh`.
+- Manuell in einer Sitzung: tmux/screen mit `./start.sh --foreground`.
 
 ## Windows
 

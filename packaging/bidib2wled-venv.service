@@ -1,0 +1,21 @@
+[Unit]
+Description=BiDiB2WLED – BiDiB node for WLED lighting (venv / start.sh)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Adjust user and path to the project directory
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/BiDiB2WLED
+ExecStart=/home/pi/BiDiB2WLED/start.sh --foreground
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+# Optional:
+# Environment=BIDIB2WLED_CONFIG=/home/pi/BiDiB2WLED/config.yaml
+# Environment=BIDIB2WLED_PORT=8080
+
+[Install]
+WantedBy=multi-user.target
