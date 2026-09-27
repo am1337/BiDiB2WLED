@@ -11,5 +11,6 @@ build/
 config.yaml
 config.yaml.bak*
 *.log
+bidib2wled.pid
 .DS_Store
 KONZEPT.md
