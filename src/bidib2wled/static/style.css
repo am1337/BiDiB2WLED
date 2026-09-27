@@ -299,3 +299,89 @@ option.opt-used {
 }
 .color-picker-rgb label { margin: 0; }
 .color-picker-rgb input { width: 100%; margin-top: 0.15rem; }
+
+.listbox {
+  display: inline-block;
+  min-width: 12rem;
+  max-width: 100%;
+  vertical-align: top;
+  background: #15171b;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.listbox .select-filter,
+.listbox select {
+  display: block;
+  width: 100%;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+.listbox .select-filter {
+  border-bottom: 1px solid var(--line);
+  padding: 0.35rem 0.5rem;
+  font-size: 0.85rem;
+}
+.listbox select:focus { outline: none; }
+
+select.combo-src { display: none !important; }
+.combo {
+  position: relative;
+  display: inline-block;
+  min-width: 14rem;
+  max-width: 100%;
+  vertical-align: top;
+}
+.combo-btn {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  background: #15171b;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.4rem 0.5rem;
+  font: inherit;
+  text-align: left;
+}
+.combo-btn:hover:not(:disabled) { border-color: var(--accent); }
+.combo-btn:disabled { opacity: 0.55; cursor: default; }
+.combo-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.combo-caret { color: var(--muted); font-size: 0.75rem; }
+.combo-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 1500;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+.combo-up .combo-panel { top: auto; bottom: calc(100% + 4px); }
+.combo-search {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: #15171b;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.85rem;
+}
+.combo-items { max-height: 15rem; overflow: auto; }
+.combo-item {
+  padding: 0.3rem 0.5rem;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.combo-item:hover, .combo-item.combo-active { background: var(--line); }
+.combo-item.combo-sel { color: var(--accent); }
+.combo-item.combo-disabled { color: var(--muted); cursor: default; }
+.combo-item.opt-used { color: #8b9098; font-style: italic; }

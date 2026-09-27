@@ -75,6 +75,7 @@ function isEditing() {
   if (!el) return false;
   if (el.closest("[data-address]")) return true;
   if (el.closest("#objects")) return false;
+  if (el.closest(".combo") || el.closest(".listbox")) return true;
   const tag = el.tagName;
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
 }
@@ -360,6 +361,7 @@ function fillOptions(el, options, current) {
   if (!el) return;
   if (!options.length) {
     el.innerHTML = '<option value="">–</option>';
+    refreshSelectFilter(el);
     return;
   }
   el.innerHTML = options
@@ -371,7 +373,295 @@ function fillOptions(el, options, current) {
     .join("");
   const values = options.map((opt) => String(opt.value));
   el.value = values.includes(String(current)) ? String(current) : values[0];
+  refreshSelectFilter(el);
 }
+
+const FILTER_SINGLE_SELECTS = ["id-led", "ins-after", "del-from", "sp-fx", "sp-pal"];
+const FILTER_MULTI_SELECTS = [
+  "l-leds", "h-leds", "sig-leds", "sp-leds", "v-leds",
+  "g-mem", "s-grp", "v-mod-kan",
+];
+
+function allOptionsOf(el) {
+  if (!el) return [];
+  return el._optCache || [...el.options];
+}
+
+function selectedValuesOf(el) {
+  return allOptionsOf(el).filter((opt) => opt.selected).map((opt) => opt.value);
+}
+
+function selectValue(el) {
+  const selected = selectedValuesOf(el);
+  return selected.length ? selected[0] : "";
+}
+
+function optionMatchesFilter(opt, q) {
+  return opt.textContent.toLowerCase().includes(q) || opt.value.toLowerCase().includes(q);
+}
+
+function cacheSelectOptions(el) {
+  el._optCache = [...el.options];
+  for (const opt of el._optCache) {
+    const parent = opt.parentElement;
+    opt._optGroup = parent && parent.tagName === "OPTGROUP" ? parent.label : null;
+  }
+}
+
+function applySelectFilter(el) {
+  const input = el && el._filterInput;
+  if (!input) return;
+  const cache = el._optCache || [...el.options];
+  const q = input.value.trim().toLowerCase();
+  const frag = document.createDocumentFragment();
+  const groups = new Map();
+  let shown = 0;
+  for (const opt of cache) {
+    if (q && !optionMatchesFilter(opt, q)) continue;
+    shown += 1;
+    if (opt._optGroup != null) {
+      let grp = groups.get(opt._optGroup);
+      if (!grp) {
+        grp = document.createElement("optgroup");
+        grp.label = opt._optGroup;
+        groups.set(opt._optGroup, grp);
+        frag.appendChild(grp);
+      }
+      grp.appendChild(opt);
+    } else {
+      frag.appendChild(opt);
+    }
+  }
+  if (!shown) {
+    const empty = document.createElement("option");
+    empty.disabled = true;
+    empty.textContent = t("filter.no_match");
+    frag.appendChild(empty);
+  }
+  el.replaceChildren(frag);
+}
+
+function renderComboItems(el) {
+  const c = el && el._combo;
+  if (!c) return;
+  const q = c.search.value.trim().toLowerCase();
+  const frag = document.createDocumentFragment();
+  let shown = 0;
+  for (const opt of el.options) {
+    if (q && !optionMatchesFilter(opt, q)) continue;
+    const item = document.createElement("div");
+    item.className = "combo-item";
+    if (opt.className) item.classList.add(opt.className);
+    if (opt.selected) item.classList.add("combo-sel");
+    if (opt.disabled) {
+      item.classList.add("combo-disabled");
+    } else {
+      item.dataset.value = opt.value;
+    }
+    if (opt.title) item.title = opt.title;
+    item.textContent = opt.textContent;
+    item.setAttribute("role", "option");
+    frag.appendChild(item);
+    shown += 1;
+  }
+  if (!shown) {
+    const empty = document.createElement("div");
+    empty.className = "combo-item combo-disabled";
+    empty.textContent = t("filter.no_match");
+    frag.appendChild(empty);
+  }
+  c.items.replaceChildren(frag);
+  c.active = -1;
+}
+
+function syncComboDisplay(el) {
+  const c = el && el._combo;
+  if (!c) return;
+  const opt = el.selectedOptions[0];
+  c.label.textContent = opt ? opt.textContent : "–";
+  c.btn.disabled = el.disabled;
+}
+
+function syncCombo(el) {
+  const c = el && el._combo;
+  if (!c) return;
+  if (!c.panel.classList.contains("hidden")) renderComboItems(el);
+  syncComboDisplay(el);
+}
+
+function closeCombo(el) {
+  const c = el && el._combo;
+  if (c) c.panel.classList.add("hidden");
+}
+
+function closeAllCombos() {
+  document.querySelectorAll(".combo-panel:not(.hidden)").forEach((panel) => {
+    panel.classList.add("hidden");
+  });
+}
+
+function openCombo(el) {
+  const c = el._combo;
+  closeAllCombos();
+  c.panel.classList.remove("hidden");
+  c.search.value = "";
+  renderComboItems(el);
+  const rect = c.panel.getBoundingClientRect();
+  c.root.classList.toggle("combo-up", rect.bottom > window.innerHeight - 8);
+  c.search.focus();
+}
+
+function pickComboItem(el, item) {
+  el.value = item.dataset.value;
+  el.dispatchEvent(new Event("change", { bubbles: true }));
+  closeCombo(el);
+  el._combo.btn.focus();
+}
+
+function comboKeydown(el, e) {
+  const c = el._combo;
+  const items = [...c.items.querySelectorAll("[data-value]")];
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    if (!items.length) return;
+    c.active = (c.active + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+    items.forEach((it, i) => it.classList.toggle("combo-active", i === c.active));
+    items[c.active].scrollIntoView({ block: "nearest" });
+    return;
+  }
+  if (e.key === "Enter") {
+    e.preventDefault();
+    const pick = items[c.active] || items[0];
+    if (pick) pickComboItem(el, pick);
+  }
+}
+
+function refreshSelectFilter(el) {
+  if (!el) return;
+  if (el._combo) {
+    syncCombo(el);
+    return;
+  }
+  const input = el._filterInput;
+  if (!input) return;
+  cacheSelectOptions(el);
+  input.disabled = el.disabled;
+  applySelectFilter(el);
+}
+
+function clearSelectFilter(el) {
+  if (!el) return;
+  if (el._combo) {
+    const search = el._combo.search;
+    if (search.value) {
+      search.value = "";
+      renderComboItems(el);
+    }
+    return;
+  }
+  const input = el._filterInput;
+  if (input && input.value) {
+    input.value = "";
+    applySelectFilter(el);
+  }
+}
+
+function setSelectValue(el, value) {
+  if (!el) return;
+  clearSelectFilter(el);
+  el.value = value;
+  syncCombo(el);
+}
+
+function attachSelectFilter(el) {
+  if (!el || el._filterInput) return;
+  const wrap = document.createElement("div");
+  wrap.className = "listbox";
+  const input = document.createElement("input");
+  input.type = "search";
+  input.className = "select-filter";
+  input.placeholder = t("ph.filter");
+  input.setAttribute("aria-label", t("ph.filter"));
+  input.autocomplete = "off";
+  input.spellcheck = false;
+  el.insertAdjacentElement("beforebegin", wrap);
+  wrap.appendChild(input);
+  wrap.appendChild(el);
+  el._filterInput = input;
+  input.addEventListener("input", () => applySelectFilter(el));
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      input.value = "";
+      applySelectFilter(el);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const first = [...el.options].find((opt) => !opt.disabled);
+      if (!first) return;
+      first.selected = !first.selected;
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      el.focus();
+    }
+  });
+  refreshSelectFilter(el);
+}
+
+function attachCombo(el) {
+  if (!el || el._combo) return;
+  el.classList.add("combo-src");
+  const root = document.createElement("div");
+  root.className = "combo";
+  root.innerHTML =
+    '<button type="button" class="combo-btn" aria-haspopup="listbox">' +
+    '<span class="combo-label"></span><span class="combo-caret">▾</span></button>' +
+    '<div class="combo-panel hidden">' +
+    `<input type="search" class="combo-search" autocomplete="off" spellcheck="false" placeholder="${esc(t("ph.filter"))}">` +
+    '<div class="combo-items" role="listbox"></div></div>';
+  el.insertAdjacentElement("beforebegin", root);
+  const c = {
+    root,
+    btn: root.querySelector(".combo-btn"),
+    panel: root.querySelector(".combo-panel"),
+    search: root.querySelector(".combo-search"),
+    items: root.querySelector(".combo-items"),
+    label: root.querySelector(".combo-label"),
+    active: -1,
+  };
+  el._combo = c;
+  c.btn.addEventListener("click", () => {
+    if (el.disabled) return;
+    if (c.panel.classList.contains("hidden")) openCombo(el);
+    else closeCombo(el);
+  });
+  c.btn.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      openCombo(el);
+    }
+  });
+  c.search.addEventListener("input", () => renderComboItems(el));
+  c.search.addEventListener("keydown", (e) => comboKeydown(el, e));
+  c.items.addEventListener("click", (e) => {
+    const item = e.target.closest("[data-value]");
+    if (item) pickComboItem(el, item);
+  });
+  c.panel.addEventListener("click", (e) => e.stopPropagation());
+  c.root.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !c.panel.classList.contains("hidden")) {
+      e.stopPropagation();
+      closeCombo(el);
+      c.btn.focus();
+    }
+  });
+  el.addEventListener("change", () => syncComboDisplay(el));
+  syncCombo(el);
+}
+
+document.addEventListener("pointerdown", (e) => {
+  if (e.target.closest(".combo")) return;
+  closeAllCombos();
+});
 
 function ledOwners(ctrlName, globalIndex) {
   const leds = (status.usage && status.usage.leds && status.usage.leds[ctrlName]) || {};
@@ -606,7 +896,7 @@ function fillLedSelect(ledId, ctrlName, outId, anteilId, insert, remove) {
   if (!el) return;
   const outs = outputsOf(ctrlName);
   const out = outs.find((item) => String(item.id) === String(outId)) || outs[0];
-  const selected = new Set([...el.selectedOptions].map((opt) => opt.value));
+  const selected = new Set(selectedValuesOf(el));
   const wledLen = out && out.len ? out.len : 0;
   const start = out ? out.start : 0;
   const highest = highestConfigLed(ctrlName);
@@ -616,6 +906,7 @@ function fillLedSelect(ledId, ctrlName, outId, anteilId, insert, remove) {
     el.innerHTML = insert
       ? `<option value="-1">${esc(t("led.at_start"))}</option>`
       : `<option value="">${esc(t("led.none"))}</option>`;
+    refreshSelectFilter(el);
     showChosenLeds(el);
     return;
   }
@@ -639,13 +930,17 @@ function fillLedSelect(ledId, ctrlName, outId, anteilId, insert, remove) {
   } else if (selected.size && [...el.options].some((opt) => selected.has(opt.value))) {
     el.value = [...selected][0];
   }
+  refreshSelectFilter(el);
   scrollSelectToSelection(el);
   showChosenLeds(el);
 }
 
 function selectedLocals(ledId) {
   const el = document.getElementById(ledId);
-  return [...el.selectedOptions].map((opt) => Number(opt.value)).filter((n) => Number.isFinite(n));
+  return allOptionsOf(el)
+    .filter((opt) => opt.selected)
+    .map((opt) => Number(opt.value))
+    .filter((n) => Number.isFinite(n));
 }
 
 function toGlobals(ctrlName, outId, locals) {
@@ -688,6 +983,7 @@ function fillNamedSelect(el, names, current, emptyLabel) {
   if (!el) return;
   if (!names.length) {
     el.innerHTML = `<option value="">${esc(emptyLabel)}</option>`;
+    refreshSelectFilter(el);
     return;
   }
   fillOptions(
@@ -703,13 +999,13 @@ function fillSpecialFx(ctrlName) {
   fillNamedSelect(
     $("#sp-fx"),
     (ctrl && ctrl.effects) || [],
-    $("#sp-fx") && $("#sp-fx").value,
+    selectValue($("#sp-fx")),
     reachable ? t("fx.none") : t("fx.unloaded")
   );
   fillNamedSelect(
     $("#sp-pal"),
     (ctrl && ctrl.palettes) || [],
-    $("#sp-pal") && $("#sp-pal").value,
+    selectValue($("#sp-pal")),
     reachable ? t("pal.none") : t("pal.unloaded")
   );
 }
@@ -742,12 +1038,13 @@ function fillGroupMemberSelect(selected) {
   if (!el) return;
   const keep = selected
     ? new Set(selected.map(String))
-    : new Set([...el.selectedOptions].map((opt) => opt.value));
+    : new Set(selectedValuesOf(el));
   const exclude = editing.kind === "group" && editing.id ? editing.id : null;
   const sections = groupMemberSections(exclude);
   if (!sections.length) {
     el.innerHTML = `<option value="">${esc(t("members.empty"))}</option>`;
     el.disabled = true;
+    refreshSelectFilter(el);
     return;
   }
   el.disabled = false;
@@ -768,16 +1065,18 @@ function fillGroupMemberSelect(selected) {
   [...el.options].forEach((opt) => {
     opt.selected = keep.has(opt.value);
   });
+  refreshSelectFilter(el);
 }
 
 function fillMultiSelect(el, items, selected, emptyLabel, excludeIds) {
   if (!el) return;
   const keep = selected
     ? new Set(selected.map(String))
-    : new Set([...el.selectedOptions].map((opt) => opt.value));
+    : new Set(selectedValuesOf(el));
   if (!items.length) {
     el.innerHTML = `<option value="">${esc(emptyLabel)}</option>`;
     el.disabled = true;
+    refreshSelectFilter(el);
     return;
   }
   el.disabled = false;
@@ -793,6 +1092,7 @@ function fillMultiSelect(el, items, selected, emptyLabel, excludeIds) {
   [...el.options].forEach((opt) => {
     opt.selected = keep.has(opt.value);
   });
+  refreshSelectFilter(el);
 }
 
 function fillSequenceGroupSelect(selected) {
@@ -802,7 +1102,7 @@ function fillSequenceGroupSelect(selected) {
 
 function selectedMembers(selectId) {
   const el = document.getElementById(selectId);
-  return [...el.selectedOptions].map((opt) => opt.value).filter(Boolean);
+  return selectedValuesOf(el).filter(Boolean);
 }
 
 for (const group of LED_GROUPS) {
@@ -1379,13 +1679,15 @@ function scrollSelectToSelection(select) {
 
 function showChosenLeds(el) {
   if (!el) return;
-  let hint = el.parentElement && el.parentElement.querySelector(":scope > .led-chosen");
+  const host = el.closest(".listbox") || el;
+  let hint = host.parentElement && host.parentElement.querySelector(":scope > .led-chosen");
   if (!hint) {
     hint = document.createElement("span");
     hint.className = "led-chosen";
-    el.insertAdjacentElement("afterend", hint);
+    host.insertAdjacentElement("afterend", hint);
   }
-  const labels = [...el.selectedOptions]
+  const labels = allOptionsOf(el)
+    .filter((opt) => opt.selected)
     .map((opt) => opt.textContent.replace(/\s+·\s.*$/, "").trim())
     .filter(Boolean);
   hint.textContent = labels.length ? t("led.chosen", { labels: labels.join(", ") }) : "";
@@ -1395,9 +1697,10 @@ function selectLocals(ledId, locals) {
   const el = document.getElementById(ledId);
   if (!el) return;
   const want = new Set((locals || []).map(String));
-  [...el.options].forEach((opt) => {
+  allOptionsOf(el).forEach((opt) => {
     opt.selected = want.has(opt.value);
   });
+  applySelectFilter(el);
   scrollSelectToSelection(el);
   showChosenLeds(el);
 }
@@ -1653,8 +1956,8 @@ function loadSpecial(id, spec) {
   if ($("#sp-anteil")) $("#sp-anteil").value = spec.channel || "rgb";
   fillLedSelect("sp-leds", spec.controller, located.outId, "sp-anteil");
   selectLocals("sp-leds", located.locals);
-  $("#sp-fx").value = String(spec.effect ?? 0);
-  $("#sp-pal").value = String(spec.palette ?? 0);
+  setSelectValue($("#sp-fx"), String(spec.effect ?? 0));
+  setSelectValue($("#sp-pal"), String(spec.palette ?? 0));
   $("#sp-sx").value = String(spec.speed ?? 128);
   $("#sp-ix").value = String(spec.intensity ?? 128);
   setColorInput("sp-farbe", spec.color || DEFAULT_COLOR);
@@ -1774,11 +2077,12 @@ function fillVehicleModeChannels(selected) {
   if (!el) return;
   const keep = selected
     ? new Set(selected.map(String))
-    : new Set([...el.selectedOptions].map((opt) => opt.value));
+    : new Set(selectedValuesOf(el));
   const names = parseKanaelLines($("#v-kanaele") && $("#v-kanaele").value).map((ch) => ch.name);
   if (!names.length) {
     el.innerHTML = `<option value="">${esc(t("veh.channels_empty"))}</option>`;
     el.disabled = true;
+    refreshSelectFilter(el);
     return;
   }
   el.disabled = false;
@@ -1786,6 +2090,7 @@ function fillVehicleModeChannels(selected) {
   [...el.options].forEach((opt) => {
     opt.selected = keep.has(opt.value);
   });
+  refreshSelectFilter(el);
 }
 
 function loadVehicle(id, vehicle) {
@@ -1862,8 +2167,8 @@ function cancelEdit(kind) {
     $("#sp-sx").value = "128";
     $("#sp-ix").value = "128";
     setColorInput("sp-farbe", DEFAULT_COLOR);
-    if ($("#sp-fx")) $("#sp-fx").selectedIndex = 0;
-    if ($("#sp-pal")) $("#sp-pal").selectedIndex = 0;
+    if ($("#sp-fx")) { $("#sp-fx").selectedIndex = 0; syncCombo($("#sp-fx")); }
+    if ($("#sp-pal")) { $("#sp-pal").selectedIndex = 0; syncCombo($("#sp-pal")); }
     if ($("#sp-anteil")) $("#sp-anteil").value = "rgb";
   } else if (kind === "vehicle") {
     $("#v-id").value = "";
@@ -2304,7 +2609,11 @@ $("#yml-reload").onclick = () => runAction(t("ok.reload"), async () => {
   await loadYaml();
 });
 
-initI18n().then(() => refresh());
+initI18n().then(() => {
+  FILTER_MULTI_SELECTS.forEach((id) => attachSelectFilter(document.getElementById(id)));
+  FILTER_SINGLE_SELECTS.forEach((id) => attachCombo(document.getElementById(id)));
+  refresh();
+});
 setInterval(() => {
   if (!isEditing()) refresh();
 }, 4000);
